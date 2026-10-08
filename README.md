@@ -51,6 +51,22 @@ plugin_manager action=install_bundle target=git+https://github.com/512475656-dot
 > 请用插件管理器把这个仓库作为 bundle 安装并启用：`git+https://github.com/512475656-dot/nraness-chajian.git`
 > 装完确认它在 profile 的 `dsh.profile.bundles` 里，然后告诉我需要重启还是刷新页面。
 
+#### 装之前请确认这四点
+
+| 前提 | 说明 |
+| --- | --- |
+| 仓库是**公开**的 | 是。私有仓库需要额外配 GitHub 凭据 |
+| 目标机器**能访问 github.com** 且有 **git** | 安装前插件管理器会先用 `git ls-remote` 探一次仓库，探不通就中止 |
+| **profile 找对** | 同一台机器可能有多个 profile，装错了不报错也不生效 —— 见 [QUICKSTART.md](QUICKSTART.md) 第 2 步 |
+| **装完重启 DSH** | 组合包列表只在启动时读一次。之后改客户端代码只需刷新页面 |
+
+> **没有网怎么办**：这个插件**零第三方依赖**，所以完全离线也能装 —— 用
+> [Code → Download ZIP](https://github.com/512475656-dot/nraness-chajian/archive/refs/heads/main.zip)
+> 下载，解压到本机后用「方式二」把 `dependencies` 指向解压出来的目录即可（`link:` 或 `file:` 都行）。
+>
+> **公司网络拦 github 怎么办**：让 git 走你的代理即可，例如
+> `git config --global http.proxy http://127.0.0.1:端口`（本插件在受限网络下就是这样装成的）。
+
 ### 方式二：下载 zip 手动安装
 
 1. 下载本仓库（Code → Download ZIP）或 `git clone`
