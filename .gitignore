@@ -1,0 +1,13 @@
+# 依赖、构建与自检产物：都不该进仓库
+node_modules/
+pnpm-lock.yaml
+
+# 离线自检生成的样本 deck（可随时重新生成）
+test/out/
+
+# 编辑器 / 操作系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,40 @@
+{
+  "name": "@local/dsh-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Apple-style multi-pane Workbench for the DSH Web GUI: custom project groups, two workbench types (game development / research), a development node tree, node code preview, and a per-round progress + token meter.",
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "工作台 Workbench",
+    "description": "苹果风格的工作台面板：多个自定义项目组、游戏开发与综合研究两套工作台、对话节点树、对话轮次汇总，以及资源仓库（逐轮用量与 Token 计量）。"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-session"
+      ]
+    }
+  }
+}
