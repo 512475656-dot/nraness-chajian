@@ -88,15 +88,21 @@ pnpm install
 | 想升级 | 用新文件覆盖旧的 `client.js` 等，然后**刷新页面**（Host 半有改动才需要重启） |
 | 模块/设置想重置 | 清掉 `localStorage` 里的 `dsh-workbench.v3`（禁用插件不会丢，重新启用会接着用） |
 
-## 7. 更省事的做法
+## 7. 更省事的做法：直接用 git 地址安装
 
-把 `dsh-workbench` 放进一个 **git 仓库**，在其它机器上直接用仓库地址安装，以后升级只要 `git pull`：
+本插件已经放在 GitHub 上，所以**不用手工拷贝文件夹**，直接让 DSH 从仓库安装：
 
 ```
-plugin_manager action=install_bundle target=git+https://…/dsh-workbench.git
+plugin_manager action=install_bundle target=git+https://github.com/512475656-dot/nraness-chajian.git
 ```
 
-也可以在目标机器的 HARNESS 里**直接粘这段话**（把路径换成真实路径）：
+以后升级只要重新执行一次安装（或 `git pull`），**客户端半改完刷新页面即可**，Host 半有改动才需要重启。
+
+也可以在目标机器的 HARNESS 里**直接粘这段话**：
+
+> 请用插件管理器把这个仓库作为 bundle 安装并启用：
+> `git+https://github.com/512475656-dot/nraness-chajian.git`
+> 装完确认它在 profile 的 `dsh.profile.bundles` 里，然后告诉我需要重启还是刷新页面。
 
 > 我有一个本地 DSH 插件在 `<路径>\dsh-workbench`（包名 `@local/dsh-workbench`）。
 > 请用插件管理器把它作为 bundle 安装并启用（`install_bundle`，target 是这个目录路径），

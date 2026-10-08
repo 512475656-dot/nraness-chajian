@@ -1,7 +1,13 @@
 # 在另一台电脑的 DSH 上安装这个插件
 
+> **最短路径**：本插件已在 GitHub 上，直接让 DSH 从仓库安装即可，不用拷文件夹：
+> ```
+> plugin_manager action=install_bundle target=git+https://github.com/512475656-dot/nraness-chajian.git
+> ```
+> 装完**重启 DSH**。下面是手动安装的完整说明（离线、内网或想改代码时用）。
+
 这个插件是**本地插件**（包名 `@local/dsh-workbench`，未发布到任何 registry）。
-所以别的电脑**不能靠包名安装** —— 必须先把文件夹拷过去，再让那边的 DSH 以"本地路径"的方式安装。
+所以手动安装时**不能靠包名安装** —— 必须先把文件夹拷过去，再让那边的 DSH 以"本地路径"的方式安装。
 
 ---
 
@@ -109,5 +115,12 @@ node test/render-check.cjs
 
 ## 6. 想一次性装多台 / 更省事？
 
-把 `dsh-workbench` 放进一个 **git 仓库**，然后在其它机器上用仓库地址安装（`install_bundle` 的 target 用 git spec，例如
-`git+https://…/dsh-workbench.git`）。这样以后升级只要 `git pull` —— 客户端半**刷新页面**即可生效，Host 半需要重启。
+本插件已发布在：**https://github.com/512475656-dot/nraness-chajian**
+
+其它机器可以直接用仓库地址安装（不用手工拷文件夹）：
+
+```
+plugin_manager action=install_bundle target=git+https://github.com/512475656-dot/nraness-chajian.git
+```
+
+以后升级只要重新执行一次安装（或 `git pull`）—— 客户端半**刷新页面**即可生效，Host 半需要重启。

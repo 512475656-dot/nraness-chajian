@@ -100,12 +100,15 @@ client.js           全部界面（约 6000 行，唯一需要关心的文件）
 index.js            Host 半（保留的本地文件流式路由，当前客户端未调用）
 icon.svg
 locale/zh.json  locale/en.json
-README.md           完整功能文档与设计说明
+README.md           本文件：安装与功能摘要
+REFERENCE.md        完整功能与设计文档（每个窗格、设计规则、性能排查全过程）
 INSTALL.md          安装细节与排错
-QUICKSTART.md       从 zip 开始的最短路径
-GIT.md              维护本仓库 / 推送到 GitHub 的说明
+QUICKSTART.md       从 zip / 手动安装的最短路径
+GIT.md              维护本仓库的说明
 test/render-check.cjs   离线自检（83 项断言，可在无界面环境跑）
 ```
+
+> 想深入看某个功能怎么做的、为什么这么设计，读 **[REFERENCE.md](REFERENCE.md)**。
 
 ## 自检
 
