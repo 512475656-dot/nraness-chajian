@@ -1371,10 +1371,14 @@ async function main() {
       }
       return text.slice(at, i + 1);
     };
+    // Anchor on a real declaration: optional indentation, then `const NAME =`, to end of
+    // line. A bare substring search for "const NAME =" also matches prose INSIDE a comment
+    // (this file's own docs mention RICH_RULE), which silently grabbed the wrong text and
+    // made the check behave differently depending on how the file was checked out.
     const grabConst = (name) => {
-      const at = text.indexOf('const ' + name + ' =');
-      if (at < 0) throw new Error('missing const ' + name);
-      return text.slice(at, text.indexOf(';\n', at) + 1);
+      const found = new RegExp('^[ \\t]*const ' + name + ' =.*$', 'm').exec(text);
+      if (!found) throw new Error('missing const ' + name);
+      return found[0];
     };
     const consts = ['RICH_HEAD', 'RICH_HASH_NUM', 'RICH_RULE', 'RICH_NUM', 'RICH_BULLET', 'RICH_WHOLE_BOLD']
       .map(grabConst).join('\n');

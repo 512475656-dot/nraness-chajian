@@ -1,4 +1,4 @@
-# 依赖、构建与自检产物：都不该进仓库
+﻿# 依赖、构建与自检产物：都不该进仓库
 node_modules/
 pnpm-lock.yaml
 
@@ -11,3 +11,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# 绝不允许提交的本地凭据 / 临时文件
+.gh_token
+.device_code
+*.token
+.env
