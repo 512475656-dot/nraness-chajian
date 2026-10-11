@@ -1,0 +1,75 @@
+/* =====================================================================
+   以下三块是本次会话中我写的 CSS, 在 2026-10-11 02:24 的一次按行删除事故中被误删
+   (CSS 模板字面量从 ~1702 行缩到 774 行). 逐字复原, 可直接贴回样式表中原位置附近.
+   注意: 同一事故还删掉了不属于我写的约 700 行(每日新闻 / 开发控制台 / 其它面板),
+   那些我从未读过, 无法复原.
+   ===================================================================== */
+
+/* ---- 便签: sticky notes on the desktop ---- */
+.wsb-notes{position:absolute;inset:0;z-index:3;pointer-events:none}
+.wsb-sticky{position:absolute;pointer-events:auto;
+  display:flex;flex-direction:column;border-radius:14px;overflow:hidden;
+  background:var(--sticky-bg,#f6d97a);color:var(--sticky-ink,#3d3010);
+  box-shadow:0 14px 30px -14px rgba(0,0,0,.55);transition:box-shadow .2s ease}
+.wsb-sticky[data-snapped]{box-shadow:0 22px 40px -18px rgba(0,0,0,.62),
+  0 0 0 1.5px color-mix(in srgb,var(--wsb-c1,#7fb2ff) 75%,transparent)}
+.wsb-sticky[data-dragging="true"]{z-index:5;box-shadow:0 28px 50px -18px rgba(0,0,0,.7);
+  animation:wsb-jiggle .44s ease-in-out infinite}
+.wsb-stickyHead{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:grab;touch-action:none;
+  user-select:none;-webkit-user-select:none}
+.wsb-sticky[data-dragging="true"],.wsb-sticky[data-dragging="true"] *{user-select:none;-webkit-user-select:none}
+.wsb-stickyGrip{flex:1 1 auto;height:4px;border-radius:2px;
+  background:color-mix(in srgb,var(--sticky-ink,#3d3010) 24%,transparent)}
+.wsb-stickyDots{display:flex;gap:4px}
+.wsb-stickyDot{width:13px;height:13px;padding:0;border-radius:50%;cursor:pointer;
+  border:1px solid color-mix(in srgb,#000 18%,transparent)}
+.wsb-stickyDot[data-on="true"]{outline:2px solid color-mix(in srgb,var(--sticky-ink,#3d3010) 55%,transparent);
+  outline-offset:1px}
+.wsb-stickyDel{width:17px;height:17px;padding:0;border:0;border-radius:50%;cursor:pointer;
+  font:inherit;font-size:12px;line-height:1;display:grid;place-items:center;color:inherit;
+  background:color-mix(in srgb,var(--sticky-ink,#3d3010) 16%,transparent)}
+.wsb-stickyResize{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;
+  background:linear-gradient(135deg,transparent 52%,color-mix(in srgb,var(--sticky-ink,#3d3010) 34%,transparent) 52%,transparent 64%)}
+.wsb-stickyBody{flex:1 1 auto;width:100%;box-sizing:border-box;min-height:96px;resize:none;border:0;
+  outline:none;background:transparent;color:inherit;font:inherit;font-size:12.5px;line-height:1.55;
+  padding:0 10px 10px}
+.wsb-stickyBody::placeholder{color:color-mix(in srgb,var(--sticky-ink,#3d3010) 45%,transparent)}
+
+/* ---- drag-to-trash: a long press picks the tile up, the bottom band deletes it ---- */
+/* iOS 式晃动: 用独立的 rotate 属性, 与跟随指针的 transform 叠加而不冲突. */
+.wsb-card[data-dragging="true"]{z-index:6;cursor:grabbing;
+  box-shadow:0 34px 60px -22px rgba(0,0,0,.7);
+  animation:wsb-jiggle .44s ease-in-out infinite}
+@keyframes wsb-jiggle{
+  0%,100%{rotate:-.9deg}
+  50%{rotate:.9deg}}
+/* 落区: 与磁贴同一套玻璃语言. 它不接收指针事件(落点由几何判定), 所以不会打断拖动. */
+.wsb-trash{position:absolute;left:26px;right:26px;bottom:66px;height:108px;z-index:7;
+  display:flex;align-items:center;justify-content:center;gap:12px;overflow:hidden;
+  border-radius:24px;border:1px solid color-mix(in srgb,#fff 16%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 38%,transparent);
+  -webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%);
+  box-shadow:0 24px 48px -20px rgba(0,0,0,.6),
+    inset 0 1px 0 color-mix(in srgb,#fff calc(14% * var(--wsb-glass-spec,1)),transparent),
+    inset 0 -22px 36px -26px rgba(0,0,0,.6);
+  color:var(--dsw-alias-label-secondary);pointer-events:none;
+  animation:wsb-trashIn .26s cubic-bezier(.32,.72,0,1) both;
+  transition:background .2s ease,border-color .2s ease,box-shadow .2s ease,color .2s ease}
+.wsb-trash:before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(140deg,color-mix(in srgb,#fff 9%,transparent),transparent 46%)}
+.wsb-trash>svg{position:relative;transition:transform .24s var(--wsb-spring)}
+.wsb-trash[data-over="true"]{
+  border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#ff6b6b) 62%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#ff6b6b) 26%,transparent);
+  color:var(--dsw-alias-label-primary);
+  box-shadow:0 30px 58px -20px rgba(0,0,0,.66),
+    inset 0 1px 0 color-mix(in srgb,#fff 22%,transparent),
+    inset 0 0 46px -12px color-mix(in srgb,var(--dsw-alias-state-error-primary,#ff6b6b) 55%,transparent)}
+.wsb-trash[data-over="true"]>svg{transform:scale(1.22);
+  animation:wsb-trashBob .5s ease-in-out infinite}
+.wsb-trashLabel{position:relative;font-size:12.5px;font-weight:600;letter-spacing:.2px}
+@keyframes wsb-trashIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes wsb-trashBob{0%,100%{translate:0 1px}50%{translate:0 -2px}}
+
+/* ---- 液态玻璃的边缘环与磁贴几何(仍在文件里, 此处仅作对照, 不需要贴回) ----
+   .wsb-lens / .wsb-lensDefs / [data-glass] 系列 / .wsb-card 的 geometry 节: 都还在. */

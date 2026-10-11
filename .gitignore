@@ -1,0 +1,32 @@
+﻿# 依赖、构建与自检产物：都不该进仓库
+node_modules/
+pnpm-lock.yaml
+
+# 离线自检生成的样本 deck（可随时重新生成）
+test/out/
+
+# 编辑器 / 操作系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 绝不允许提交的本地凭据 / 临时文件
+.gh_token
+.device_code
+*.token
+.env
+
+# 开发过程中的临时备份（体积大、可随时重生成）
+client.before-*.js
+client.damaged-*.js
+client.healthy-*.js
+client.installed-*.js
+client.js.before-*
+client.damaged-keep.js
+test/patch-dim/*.before-*
+
+# 自检文件的临时备份
+*.before-*
+*.broken-*

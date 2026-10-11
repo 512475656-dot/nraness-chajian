@@ -1,0 +1,33 @@
+/* 模块屏头部：更大的标题 · 更好看的字体 · 英文缩写胶囊 · 统一的返回按钮
+   四屏的标题结构各自独立（.wsb-title / .wsb-nwTitle / .wsb-stkTitle），所以逐个覆盖。
+   字体栈以圆体优先；返回按钮与桌面模块图标同一套线条语言（圆角方块 + 单线 chevron）。 */
+
+.wsb-title,.wsb-nwTitle,.wsb-stkTitle{align-items:center;gap:11px}
+.wsb-title b,.wsb-nwTitle b,.wsb-stkTitle b{font-size:22px;font-weight:600;letter-spacing:-.012em;
+  line-height:1.15;white-space:nowrap;
+  font-family:ui-rounded,"SF Pro Rounded","SF Pro Display",system-ui,-apple-system,
+    "Segoe UI Variable Display","Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wsb-title span,.wsb-nwTitle span,.wsb-stkTitle span{font-size:13px;line-height:1.5;max-width:46ch}
+/* 英文缩写：小号大写 + 字距，一枚安静的胶囊 */
+.wsb-titleAbbr{flex:0 0 auto;font-size:11px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;padding:2.5px 8px;border-radius:8px;
+  color:var(--dsw-alias-label-secondary);
+  background:color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--dsw-alias-label-primary) 11%,transparent)}
+
+/* 统一的返回按钮：38×38 圆角方块 + 单线 chevron */
+.wsb-backBtn{appearance:none;flex:0 0 auto;width:38px;height:38px;padding:0;
+  display:grid;place-items:center;border-radius:12px;cursor:pointer;
+  color:var(--dsw-alias-label-primary);
+  border:1px solid color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 55%,transparent);
+  transition:transform .18s cubic-bezier(.32,.72,0,1),background .18s ease}
+.wsb-backBtn:hover{transform:translateY(-1px);
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 82%,transparent)}
+.wsb-backBtn:active{transform:scale(.94)}
+.wsb-backBtn>svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){
+  .wsb-backBtn{transition:none}
+  .wsb-backBtn:hover,.wsb-backBtn:active{transform:none}}

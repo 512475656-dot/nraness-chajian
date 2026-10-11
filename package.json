@@ -1,0 +1,47 @@
+{
+  "name": "@local/dsh-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Apple-style multi-pane Workbench for the DSH Web GUI: custom project groups, a conversation console (对话后台), a node-based mind-map notebook (6 structure presets, nodes carrying text and pictures), a daily-news reader (global headlines plus your own keyword topics, kept for 7 days), node code preview, and a per-round progress + token meter.",
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "工作台 Workbench",
+    "description": "苹果风格的工作台面板：多个自定义项目组、对话后台、框架笔记（节点式思维导图，6 种结构预设，节点里可写文字、贴图片），以及每日新闻模块（当日全球大事件 + 自定义关键词，最多保留 7 天、条数 10–100 可调）；另有对话节点树、对话轮次汇总与资源仓库（逐轮用量与 Token 计量）。"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./news": "./news.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "news.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "scripts": {
+    "check": "node test/render-check.cjs && node test/host-route-check.cjs",
+    "preview": "node test/preview-news.mjs",
+    "preview:notes": "node test/preview-notes.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-session"
+      ]
+    }
+  }
+}
