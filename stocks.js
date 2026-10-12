@@ -658,3 +658,311 @@ export async function collectQuotes(request) {
     },
   };
 }
+
+//#region market members (点进某个市场，看它内部的全部个股)
+
+/**
+ * 东方财富的板块成分 —— 「点进市场看全部股票」的数据来源。
+ *
+ * ## 为什么换来源，而不是接着用 Yahoo
+ *
+ * 本机实测（`query1.finance.yahoo.com`，走系统代理 127.0.0.1:7897）：
+ *
+ * | 端点 | 结果 |
+ * | --- | --- |
+ * | `/v7/finance/quote?symbols=…` | **403** |
+ * | `/v1/finance/screener/predefined/saved` | **403** |
+ * | `/v8/finance/chart/AAPL` （本文件的主力源） | **403** |
+ *
+ * 也就是说指数报价那一半一直在靠腾讯的兜底在跑。东财 `push2.eastmoney.com` 从本机**直连**
+ * 200、200 毫秒内返回，而且它天生就有「按板块列出成分股」这个能力 —— 这正是这个功能要的
+ * 东西，Yahoo 那侧反而没有（它的 screener 只能给「热门股」，不是某个交易所的成员表）。
+ *
+ * ## 实测出来的三条硬约束（写代码前先量过）
+ *
+ * 1. **`fid=f3` 是唯一真的会排序的字段**。`fid=f6`（成交额）、`fid=f20`（市值）实测返回的是
+ *    代码序的垃圾行（`600001 邯郸钢铁` 这种退市股排在最前），不是降序。所以**服务端只按涨幅
+ *    排序取一片**，其余排序交给客户端在取回的切片上做 —— 这也正是各种看盘软件「榜单」的做法。
+ * 2. **`pz` 上限 100**：请求 `pz=200` 也只回 100 行，要更多必须翻页。这里按需翻 `pn`。
+ * 3. **港股/美股的全量列表里混着大量窝轮、票据、权证**（`m:116` 全量 17348 条，多数价格为空）。
+ *    所以这两类市场**不列全量**，而是取「按涨幅排序的前 N 条」当成活跃榜 —— 对读者来说，
+ *    一个全是空行的全量列表没有任何价值。
+ *
+ * ## 与指数报价的关系
+ *
+ * 这里**完全独立于** {@link STOCK_CATALOG}：那个是「13 个指数的最新点位」，这个是「某个板块的
+ * 成分股」。两者共用 `net.js` 的客户端、共用失败与诊断的写法，但缓存、并发、限流各自一套。
+ */
+
+/** 东财列表接口。GET，字段用 `f` 编号，`fltt=2` 让它把价格当小数返回（否则是 ×100 的整数）。 */
+const EM_LIST_URL = 'https://push2.eastmoney.com/api/qt/clist/get';
+
+/** 东财单页上限，实测：要 200 也只给 100。 */
+const EM_PAGE_MAX = 100;
+
+/** 相对 {@link EM_PAGE_MAX}，一次市场查询最多翻几页。切片再大读者也不会逐行读完。 */
+const EM_MAX_PAGES = 2;
+
+/** 一次返回给客户端的最多条数。超过就截断，并如实报告 `total`。 */
+const MEMBERS_MAX = 200;
+
+/** 成分股列表的缓存时长。榜单比指数变得慢，但也不该是一天前的。 */
+const EM_TTL_MS = 60 * 1000;
+
+/** 失败记住的时长，避免连续刷新把一个坏板块打成重试风暴。 */
+const EM_ERROR_TTL_MS = 30 * 1000;
+
+/** 请求超时。东财通常 200 ms 内回来，这是给慢网络的余量。 */
+const EM_TIMEOUT_MS = 9000;
+
+/** 响应字节上限。100 行 × 17 字段约 20 KB，这是 10 倍余量。 */
+const EM_MAX_BYTES = 400_000;
+
+/**
+ * 请求的字段编号 → 返回对象里的名字。
+ *
+ * 编号是东财的协议，不是我们的选择；这张表把协议挡在本模块内部，客户端只见名字。
+ * 每个名字都用实测确认过**确实有值**（否则客户端会出现一列永远为空的表头）。
+ */
+const EM_FIELDS = {
+  f12: 'code',
+  f13: 'board',
+  f14: 'name',
+  f2: 'price',
+  f3: 'pct',
+  f4: 'change',
+  f5: 'volume',
+  f6: 'amount',
+  f7: 'amplitude',
+  f8: 'turnover',
+  f9: 'pe',
+  f15: 'high',
+  f16: 'low',
+  f17: 'open',
+  f18: 'prevClose',
+  f20: 'marketCap',
+  f21: 'floatCap',
+  f23: 'pb',
+  f115: 'peStatic',
+};
+
+/**
+ * 可以点进去看成分股的市场板块。
+ *
+ * `fs` 是东财的板块选择器，`unit`/`decimals` 影响展示，`cap` 说明「有多少行是真的有值」——
+ * 港股与美股那一列偏小，是因为它们的全量表里混着窝轮、票据与权证，那些行价格为空，被过滤掉了。
+ */
+export const STOCK_MARKETS = [
+  { id: 'shmain', name: '沪市主板', region: 'A股', fs: 'm:1+t:2', decimals: 2, kind: 'board' },
+  { id: 'kc', name: '科创板', region: 'A股', fs: 'm:1+t:23', decimals: 2, kind: 'board' },
+  { id: 'szmain', name: '深市主板', region: 'A股', fs: 'm:0+t:6', decimals: 2, kind: 'board' },
+  { id: 'cyb2', name: '创业板', region: 'A股', fs: 'm:0+t:80', decimals: 2, kind: 'board' },
+  { id: 'bj', name: '北交所', region: 'A股', fs: 'm:0+t:81+s:2048', decimals: 2, kind: 'board' },
+  { id: 'hk', name: '港股主板', region: '港股', fs: 'm:116+t:3', decimals: 3, kind: 'rank' },
+  { id: 'hkcyb', name: '港股创业板', region: '港股', fs: 'm:116+t:4', decimals: 3, kind: 'rank' },
+  { id: 'nasdaq', name: '纳斯达克', region: '美股', fs: 'm:105', decimals: 2, kind: 'rank' },
+  { id: 'nyse', name: '纽约证交所', region: '美股', fs: 'm:106', decimals: 2, kind: 'rank' },
+  { id: 'amex', name: '美国交易所', region: '美股', fs: 'm:107', decimals: 2, kind: 'rank' },
+];
+
+const MARKET_MEMBERS_BY_ID = new Map(STOCK_MARKETS.map((market) => [market.id, market]));
+
+/** 板块列表，先于任何抓取就能渲染。 */
+export function stockMarkets() {
+  return {
+    ok: true,
+    regions: [...new Set(STOCK_MARKETS.map((market) => market.region))],
+    markets: STOCK_MARKETS.map((market) => ({
+      id: market.id,
+      name: market.name,
+      region: market.region,
+      decimals: market.decimals,
+      // `board` = 这个板块本身就是一份完整名单（A股各板）；`rank` = 全量里混着衍生品，
+      // 只给活跃榜。读者有权知道「这是全部，还是前 N 名」。
+      scope: market.kind,
+    })),
+    limit: MEMBERS_MAX,
+  };
+}
+
+/** 东财把「没有值」写成 `-`，也写成 `null`，也直接不写这个键。三种都归一成 null。 */
+function emNumber(value) {
+  if (value === null || value === undefined || value === '' || value === '-') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function emText(value) {
+  if (value === null || value === undefined) return '';
+  const text = String(value).trim();
+  return text === '-' ? '' : text;
+}
+
+/**
+ * 把一行东财记录变成客户端的行。
+ *
+ * **没有价格的行直接丢掉**：港美股的全量表里，窝轮、票据、权证占了绝大多数，它们价格为空、
+ * 名称是一串编号。把它们留在列表里，读者的第一屏就是一片空白 —— 这也是「活跃榜」这个选择的由来。
+ */
+function emRow(raw, market) {
+  const price = emNumber(raw.f2);
+  if (price === null) return null;
+  const code = emText(raw.f12);
+  if (!code) return null;
+  return {
+    code,
+    name: emText(raw.f14) || code,
+    price,
+    decimals: market.decimals,
+    pct: emNumber(raw.f3),
+    change: emNumber(raw.f4),
+    // 东财的成交量单位是「手」（100 股）；港美股同接口也是手，客户端按手展示。
+    volume: emNumber(raw.f5),
+    amount: emNumber(raw.f6),
+    amplitude: emNumber(raw.f7),
+    turnover: emNumber(raw.f8),
+    pe: emNumber(raw.f9),
+    pb: emNumber(raw.f23),
+    high: emNumber(raw.f15),
+    low: emNumber(raw.f16),
+    open: emNumber(raw.f17),
+    prevClose: emNumber(raw.f18),
+    marketCap: emNumber(raw.f20),
+    floatCap: emNumber(raw.f21),
+    board: emText(raw.f13),
+  };
+}
+
+async function emPage(market, page, pageSize) {
+  const fields = Object.keys(EM_FIELDS).join(',');
+  // `po=1` 降序，`fid=f3` 涨幅 —— 见文件头的实测结论：只有 f3 真的会排序。
+  const url = EM_LIST_URL
+    + '?pn=' + page + '&pz=' + pageSize + '&po=1&np=1&fltt=2&invt=2&fid=f3'
+    + '&fs=' + encodeURIComponent(market.fs)
+    + '&fields=' + fields;
+  const response = await httpGet(url, {
+    timeoutMs: EM_TIMEOUT_MS,
+    maxBytes: EM_MAX_BYTES,
+    accept: 'application/json, */*;q=0.8',
+    // 东财是国内源，代理反而会绕远甚至失败；`fallbackDirect` 让客户端在代理不通时直连。
+    fallbackDirect: true,
+  });
+  let payload;
+  try {
+    payload = JSON.parse(response.text);
+  } catch {
+    throw new Error('行情列表返回的不是 JSON');
+  }
+  const data = payload && payload.data;
+  if (!data || (!data.diff && !Array.isArray(data.diff))) {
+    // 东财对空板块返回 `data: null`，这不是网络错误，要区分出来。
+    return { total: 0, rows: [] };
+  }
+  const list = Array.isArray(data.diff) ? data.diff : Object.values(data.diff);
+  return { total: Number(data.total) || list.length, rows: list };
+}
+
+const membersCache = new Map();
+
+function cacheGet(key, ttl) {
+  const hit = membersCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > ttl) { membersCache.delete(key); return null }
+  return hit;
+}
+
+function trimMembersCache() {
+  while (membersCache.size > 32) {
+    const oldest = membersCache.keys().next().value;
+    membersCache.delete(oldest);
+  }
+}
+
+/**
+ * 取一个市场的成分股切片。
+ *
+ * @param {object} request - `{ id, limit, refresh }`，已 JSON 解析。
+ * @returns {Promise<object>} `{ ok, market, total, rows, stats }`；`ok:false` 只在整体失败时。
+ */
+export async function collectMembers(request) {
+  const started = Date.now();
+  const id = String((request && request.id) || '').trim().slice(0, 32);
+  const market = MARKET_MEMBERS_BY_ID.get(id);
+  if (!market) {
+    return { ok: false, error: '未知的市场板块：' + (id || '(空)'), fetchedAt: Date.now() };
+  }
+  const refresh = Boolean(request && request.refresh);
+  const wanted = clampNumber(request && request.limit, 20, MEMBERS_MAX, 100);
+  // pz 上限 100，要 150 条就必须翻两页。
+  const pages = Math.max(1, Math.min(EM_MAX_PAGES, Math.ceil(wanted / EM_PAGE_MAX)));
+  const cacheKey = market.id + ':' + wanted;
+  if (!refresh) {
+    const hit = cacheGet(cacheKey, EM_TTL_MS);
+    if (hit) return Object.assign({}, hit.payload, { stats: Object.assign({}, hit.payload.stats, { cached: true, tookMs: Date.now() - started }) });
+    const bad = cacheGet(cacheKey, EM_ERROR_TTL_MS);
+    if (bad && bad.error) return { ok: false, error: bad.error, market: { id: market.id, name: market.name }, fetchedAt: Date.now() };
+  }
+
+  const rows = [];
+  let total = 0;
+  let error = '';
+  for (let page = 1; page <= pages; page += 1) {
+    const size = Math.min(EM_PAGE_MAX, wanted - rows.length);
+    if (size <= 0) break;
+    try {
+      const result = await emPage(market, page, size);
+      total = result.total || total;
+      if (!result.rows.length) break;
+      let kept = 0;
+      for (const raw of result.rows) {
+        const row = emRow(raw, market);
+        if (row) { rows.push(row); kept += 1 }
+      }
+      // 一整页没有任何有价的行，说明后面也不会有 —— 别再把翻页浪费在衍生品上。
+      if (kept === 0) break;
+    } catch (issue) {
+      error = issue && issue.message ? issue.message : '行情列表抓取失败';
+      break;
+    }
+  }
+
+  if (!rows.length) {
+    const message = error || '这个市场暂时没有返回可用的行情';
+    membersCache.set(cacheKey, { at: Date.now(), error: message });
+    trimMembersCache();
+    return {
+      ok: false, market: { id: market.id, name: market.name, region: market.region },
+      error: message, fetchedAt: Date.now(),
+      stats: { tookMs: Date.now() - started, hint: 'proxy' },
+    };
+  }
+
+  const payload = {
+    ok: true,
+    market: {
+      id: market.id, name: market.name, region: market.region,
+      decimals: market.decimals, scope: market.kind,
+    },
+    fetchedAt: Date.now(),
+    // `total` 是板块真实规模（A股主板 1846），`rows.length` 是这次给到的切片。
+    // 两个数分开报，客户端才能说清楚「1846 只里的前 100 只」而不是骗人说这是全部。
+    total,
+    shown: rows.length,
+    requestId: id,
+    // 服务端只保证「按涨幅降序的前 N 条」；其余排序由客户端在切片上做，原因见文件头。
+    rows,
+    stats: {
+      tookMs: Date.now() - started,
+      pages,
+      cached: false,
+      // `networkHint` 的第二个参数是「指数里成功了几个」，这里语义不同，不能借用：
+      // 成分股只要拿到任何一行就说明网络是通的；一行都没拿到时上面已经单独返回了
+      // `ok:false` + `hint:'proxy'`。所以这里只在「翻页途中出错但仍有数据」时提示。
+      hint: error ? 'proxy' : '',
+    },
+  };
+  membersCache.set(cacheKey, { at: Date.now(), payload });
+  trimMembersCache();
+  return payload;
+}
+

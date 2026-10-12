@@ -2049,6 +2049,48 @@ window.__ModuleLoader__.load({
 .wsb-stkTable tbody tr:hover{background:var(--dsw-alias-bg-layer-2)}
 .wsb-stkTable .wsb-stkSpark{width:66px;height:20px;margin:0;display:inline-block;vertical-align:middle}
 
+/* ---- 市场板块 / 板块成分股（点进去看全部个股）----------------------------------
+   板块卡片是"可点"的，所以它必须看起来像可点的东西：悬停抬头、右侧有一个明确的箭头。
+   成分股表复用上面的 .wsb-stkTable 骨架，只补它没有的列与方向色 —— 一套表格，两种内容。 */
+.wsb-stkMkGrid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
+.wsb-stkMkCard{position:relative;display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:14px;
+  text-align:left;cursor:pointer;appearance:none;font:inherit;color:inherit;
+  border:1px solid var(--dsw-alias-border-l1);
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),border-color .18s ease,background .18s ease}
+.wsb-stkMkCard:hover{transform:translateY(-1.5px);border-color:var(--dsw-alias-border-l2);
+  background:color-mix(in srgb,var(--wsb-c1) 10%,transparent)}
+.wsb-stkMkMain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.wsb-stkMkName{font-size:13px;font-weight:640}
+.wsb-stkMkMeta{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+.wsb-stkMkGo{flex:0 0 auto;width:16px;height:16px;color:var(--dsw-alias-label-secondary);opacity:.7}
+.wsb-stkMkCard:hover .wsb-stkMkGo{opacity:1;color:var(--wsb-c1)}
+
+.wsb-stkMkBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.wsb-stkMkWho{display:flex;flex-direction:column;gap:1px;min-width:0}
+.wsb-stkMkWho b{font-size:15px;font-weight:660}
+.wsb-stkMkCount{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+.wsb-stkMkWho,.wsb-stkMkCount{white-space:nowrap}
+.wsb-stkMkBar .wsb-input{flex:1 1 150px;min-width:120px;max-width:260px}
+.wsb-stkMkCount{margin-left:auto;text-align:right}
+
+.wsb-stkMkWrap{overflow:auto;max-height:100%}
+.wsb-stkTable[data-stock-members="1"] th[data-sortable="1"]{cursor:pointer;user-select:none}
+.wsb-stkTable[data-stock-members="1"] th[data-sortable="1"]:hover{color:var(--dsw-alias-label-primary)}
+.wsb-stkTable[data-stock-members="1"] th[data-on="true"]{color:var(--wsb-c1)}
+.wsb-stkTable[data-stock-members="1"] td[data-code]{text-align:left;font-variant-numeric:tabular-nums;
+  color:var(--dsw-alias-label-secondary);font-size:11px}
+.wsb-stkTable[data-stock-members="1"] td[data-name]{text-align:left;max-width:190px;overflow:hidden;
+  text-overflow:ellipsis}
+.wsb-stkTable[data-stock-members="1"] tr[data-dir="up"] td[data-pct]{color:var(--wsb-up);font-weight:640}
+.wsb-stkTable[data-stock-members="1"] tr[data-dir="down"] td[data-pct]{color:var(--wsb-down);font-weight:640}
+.wsb-stkMkRange{display:flex;align-items:center;gap:6px;min-width:120px}
+.wsb-stkMkRange>i{position:relative;display:block;flex:1 1 auto;height:4px;border-radius:3px;
+  background:color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent)}
+.wsb-stkMkRange>i>b{position:absolute;top:-2px;width:2px;height:8px;border-radius:2px;
+  background:var(--dsw-alias-label-primary)}
+.wsb-stkMkRange>em{flex:0 0 auto;font-style:normal;font-size:10px;color:var(--dsw-alias-label-secondary);
+  font-variant-numeric:tabular-nums}
+
 .wsb-stkFail{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;font-size:10.5px;
   color:var(--dsw-alias-label-secondary)}
 .wsb-stkFail>span{padding:3px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);
@@ -2431,6 +2473,21 @@ window.__ModuleLoader__.load({
         stockProxyHint: '有些市场抓不到：国际指数要走 Yahoo，而它需要经代理访问。请确认代理已开启（系统代理，或 ~/.dsh/.env 里的 https_proxy），然后重启 DSH。A股 / 港股 / 美股 有备用源，通常仍然可用。',
         stockOfflineHint: '一个市场都没抓到：请检查这台机器的网络连接。',
         stockDisclaimer: '行情来自公开接口，可能有延迟，仅供参考，不构成投资建议。',
+        // ── 板块成分（点进某个市场看全部个股）──────────────────────────────────
+        stockViewMarkets: '板块', stockViewMembers: '个股',
+        stockMarketsTitle: '市场板块', stockMarketsHint: '点任意板块，查看它内部的全部个股行情。',
+        stockMkBack: '返回板块', stockMkOpen: '查看个股',
+        stockMkTotal: '板块共', stockMkShownN: '只，本次显示', stockMkRankOnly: '只（活跃榜，按涨幅取前若干名）',
+        stockMkBoardAll: '只（该板块的完整名单）',
+        stockMkUpdated: '更新于', stockMkSearch: '搜索代码或名称',
+        stockMkSortPct: '涨幅', stockMkSortAmount: '成交额', stockMkSortTurnover: '换手率',
+        stockMkSortCap: '总市值', stockMkSortPrice: '价格', stockMkSortCode: '代码',
+        stockMkDirDesc: '降序', stockMkDirAsc: '升序',
+        stockMkEmpty: '没有匹配的个股。试试清空搜索。',
+        stockMkColCode: '代码', stockMkColName: '名称', stockMkColPrice: '最新价',
+        stockMkColPct: '涨跌幅', stockMkColAmount: '成交额', stockMkColTurnover: '换手率',
+        stockMkColPe: '市盈率', stockMkColCap: '总市值', stockMkColAmp: '振幅',
+        stockMkColRange: '今日区间', stockMkRestart: '成分股路由在 Host 半，需要重启一次 DSH 才会生效。',
       },
       en: {
         panel: 'Workbench', panelHint: 'projects · node tree · code preview · token meter',
@@ -2655,6 +2712,20 @@ window.__ModuleLoader__.load({
         stockProxyHint: 'Some markets are unreachable: the global indices come from Yahoo, which needs a proxy on this network. Check that your proxy is on (the system proxy, or https_proxy in ~/.dsh/.env) and restart DSH. A-shares / Hong Kong / US have a fallback source and usually still work.',
         stockOfflineHint: 'Not one market could be reached: check this machine\'s network connection.',
         stockDisclaimer: 'Quotes come from public endpoints, may be delayed, and are for reference only — not investment advice.',
+        stockViewMarkets: 'Boards', stockViewMembers: 'Constituents',
+        stockMarketsTitle: 'Market boards', stockMarketsHint: 'Open any board to see every stock inside it.',
+        stockMkBack: 'Back to boards', stockMkOpen: 'Open constituents',
+        stockMkTotal: 'board of', stockMkShownN: 'stocks, showing', stockMkRankOnly: '(active slice, top by change %)',
+        stockMkBoardAll: '(the full list for this board)',
+        stockMkUpdated: 'updated', stockMkSearch: 'Search code or name',
+        stockMkSortPct: 'Change %', stockMkSortAmount: 'Turnover', stockMkSortTurnover: 'Turnover rate',
+        stockMkSortCap: 'Market cap', stockMkSortPrice: 'Price', stockMkSortCode: 'Code',
+        stockMkDirDesc: 'desc', stockMkDirAsc: 'asc',
+        stockMkEmpty: 'No matching stock. Try clearing the search.',
+        stockMkColCode: 'Code', stockMkColName: 'Name', stockMkColPrice: 'Last',
+        stockMkColPct: 'Change', stockMkColAmount: 'Turnover', stockMkColTurnover: 'Turn rate',
+        stockMkColPe: 'P/E', stockMkColCap: 'Mkt cap', stockMkColAmp: 'Amplitude',
+        stockMkColRange: 'Day range', stockMkRestart: 'The constituents route lives in the Host half; restart DSH once for it to appear.',
       },
     };
 
@@ -3560,8 +3631,14 @@ window.__ModuleLoader__.load({
     /** Bound on the persisted snapshot — the whole catalog, so no selection can overflow it. */
     const STOCK_SNAPSHOT_MAX = 34;
 
-    /** The two readings of the same numbers: a tile board, or one dense table. */
-    const STOCK_VIEWS = ['board', 'table'];
+    /**
+     * The readings of the same data.
+     *
+     * `board` / `table` are the two shapes of "the indices I selected". `markets` is a different
+     * question —「哪些市场可以点进去」—— and opening one of its cards replaces the whole board
+     * with that board's constituent stocks (see {@link StockMarkets} / {@link StockMembers}).
+     */
+    const STOCK_VIEWS = ['board', 'table', 'markets'];
     /** Orderings the board offers. `change` is the "who is moving today" reading. */
     const STOCK_SORTS = ['catalog', 'change', 'pct'];
 
@@ -11668,11 +11745,340 @@ window.__ModuleLoader__.load({
      * → the optional shared aurora → content. So the desktop background shows through, the
      * 控制台流光 switch applies unchanged, and every colour comes from the host tokens.
      */
+    //#region 板块成分股（点进某个市场）
+
+    /**
+     * 十进制定点格式化 —— 全程避开 `toLocaleString`。
+     *
+     * 不是洁癖：这台机器上 Hermes/V8 的 `toLocaleString` 在包裹层里做过一次代理（本文件别处
+     * 因为同一类问题改写过日期格式化），一旦它在某个环境里抛错，整个板块视图就打不开。整数
+     * 部分自己加千分位只有十来行，换来的是这块功能在任何环境都能显示。
+     */
+    function mkFixed(value, digits) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return '—';
+      const places = Math.max(0, Math.min(6, Number(digits) || 0));
+      const negative = number < 0;
+      const text = Math.abs(number).toFixed(places);
+      const dot = text.indexOf('.');
+      const whole = dot < 0 ? text : text.slice(0, dot);
+      const fraction = dot < 0 ? '' : text.slice(dot);
+      let grouped = '';
+      for (let index = 0; index < whole.length; index += 1) {
+        if (index > 0 && (whole.length - index) % 3 === 0) grouped += ',';
+        grouped += whole[index];
+      }
+      return (negative ? '-' : '') + grouped + fraction;
+    }
+
+    /** 大数字按语言的量级缩写：中文用 万/亿，英文用 K/M/B。读者一眼能比大小。 */
+    function mkCompact(value, lang) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number === 0) return '—';
+      const abs = Math.abs(number);
+      if (lang === 'en') {
+        if (abs >= 1e12) return mkFixed(number / 1e12, 2) + 'T';
+        if (abs >= 1e9) return mkFixed(number / 1e9, 2) + 'B';
+        if (abs >= 1e6) return mkFixed(number / 1e6, 2) + 'M';
+        if (abs >= 1e3) return mkFixed(number / 1e3, 1) + 'K';
+        return mkFixed(number, 0);
+      }
+      if (abs >= 1e8) return mkFixed(number / 1e8, 2) + '亿';
+      if (abs >= 1e4) return mkFixed(number / 1e4, 2) + '万';
+      return mkFixed(number, 0);
+    }
+
+    /** 有值时带符号的百分比；`null`（东财的 `-`）显示成破折号，而不是 0。 */
+    function mkPct(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return '—';
+      return (number > 0 ? '+' : '') + mkFixed(number, 2) + '%';
+    }
+
+    function mkDir(pct) {
+      if (!Number.isFinite(pct)) return 'flat';
+      if (pct > 0) return 'up';
+      if (pct < 0) return 'down';
+      return 'flat';
+    }
+
+    /** 同一份数据里，某一列的取值；排序与展示共用，避免两处判断漂移。 */
+    const MK_SORTS = [
+      { id: 'pct', label: 'stockMkSortPct', value: (row) => row.pct, dir: -1 },
+      { id: 'amount', label: 'stockMkSortAmount', value: (row) => row.amount, dir: -1 },
+      { id: 'turnover', label: 'stockMkSortTurnover', value: (row) => row.turnover, dir: -1 },
+      { id: 'marketCap', label: 'stockMkSortCap', value: (row) => row.marketCap, dir: -1 },
+      { id: 'price', label: 'stockMkSortPrice', value: (row) => row.price, dir: -1 },
+      { id: 'code', label: 'stockMkSortCode', value: (row) => row.code, dir: 1, text: true },
+    ];
+
+    function mkSortOf(id) {
+      return MK_SORTS.find((item) => item.id === id) || MK_SORTS[0];
+    }
+
+    /**
+     * 取板块列表。
+     *
+     * `reload()` 让刷新按钮真的能重取；`asked` 只用来拦住「进这一页之前的空转」，
+     * 不拦显式刷新 —— 否则刷新按钮按下去什么都不会发生。
+     */
+    function useStockMarkets(enabled) {
+      const [state, setState] = useState({ list: [], loading: false, error: '', needsRestart: false });
+      const [token, setToken] = useState(0);
+      useEffect(() => {
+        if (!enabled && token === 0) return undefined;
+        let alive = true;
+        setState((previous) => Object.assign({}, previous, { loading: true, error: '' }));
+        fetch(STOCK_ROUTE + '?op=markets', { headers: { 'x-workbench-client': 'stock' } })
+          .then((response) => {
+            if (response.ok) return response.json();
+            if (response.status === 404) {
+              if (alive) setState((previous) => Object.assign({}, previous, { loading: false, needsRestart: true }));
+              return null;
+            }
+            throw new Error('HTTP ' + response.status);
+          })
+          .then((payload) => {
+            if (!payload || !alive) return;
+            if (!payload.ok) throw new Error(payload.error || '板块列表抓取失败');
+            setState({ list: Array.isArray(payload.markets) ? payload.markets : [], loading: false, error: '', needsRestart: false });
+          })
+          .catch((issue) => {
+            if (alive) setState((previous) => Object.assign({}, previous, { loading: false, error: issue && issue.message ? issue.message : '板块列表抓取失败' }));
+          });
+        return () => { alive = false };
+      }, [enabled, token]);
+      return Object.assign({}, state, { reload: () => setToken((value) => value + 1) });
+    }
+
+    /** 取一个板块的成分股切片。和指数报价一样，404 单独记，因为它要的是重启而不是重试。 */
+    function useStockMembers(marketId, refreshToken) {
+      const [state, setState] = useState({
+        rows: [], market: null, total: 0, loading: false, error: '', needsRestart: false, fetchedAt: 0, stats: null,
+      });
+      useEffect(() => {
+        if (!marketId) return undefined;
+        let alive = true;
+        setState((previous) => Object.assign({}, previous, { loading: true, error: '' }));
+        fetch(STOCK_ROUTE + '?op=members', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-workbench-client': 'stock' },
+          body: JSON.stringify({ id: marketId, limit: 100, refresh: Boolean(refreshToken) }),
+        })
+          .then((response) => {
+            if (response.ok) return response.json();
+            if (response.status === 404) {
+              if (alive) setState((previous) => Object.assign({}, previous, { loading: false, needsRestart: true }));
+              return null;
+            }
+            throw new Error('HTTP ' + response.status);
+          })
+          .then((payload) => {
+            if (!payload || !alive) return;
+            if (!payload.ok) throw new Error(payload.error || '成分股抓取失败');
+            setState({
+              rows: Array.isArray(payload.rows) ? payload.rows : [],
+              market: payload.market || null,
+              total: Number(payload.total) || 0,
+              loading: false,
+              error: '',
+              needsRestart: false,
+              fetchedAt: payload.fetchedAt || Date.now(),
+              stats: payload.stats || null,
+            });
+          })
+          .catch((issue) => {
+            if (alive) setState((previous) => Object.assign({}, previous, { loading: false, error: issue && issue.message ? issue.message : '成分股抓取失败' }));
+          });
+        return () => { alive = false };
+      }, [marketId, refreshToken]);
+      return state;
+    }
+
+    /** 板块卡片墙：每个板块一张卡，点进去看成分股。 */
+    function StockMarkets({ t, state, onOpen, onRefresh, busy }) {
+      const cards = state.list.map((market, index) => h('button', {
+        key: market.id, type: 'button', className: 'wsb-glass wsb-stkMkCard wsb-anim',
+        'data-stock-market': market.id,
+        style: { '--wsb-i': String(index) },
+        onClick: () => onOpen(market.id),
+      },
+        h('div', { className: 'wsb-stkMkMain' },
+          h('span', { className: 'wsb-stkMkName' }, market.name),
+          h('span', { className: 'wsb-stkMkMeta' }, market.region + ' · ' + (market.scope === 'board' ? t.stockMkBoardAll : t.stockMkRankOnly))),
+        h('svg', { className: 'wsb-stkMkGo', viewBox: '0 0 24 24', 'aria-hidden': 'true' },
+          h('path', { d: 'M9.5 6l6 6-6 6', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' }))));
+
+      if (state.needsRestart) {
+        return h('div', { className: 'wsb-nwEmpty', 'data-stock-mk-restart': '1' },
+          h('b', null, t.stockMkRestart));
+      }
+      if (state.loading && !cards.length) {
+        return h('div', { className: 'wsb-nwEmpty', 'data-stock-mk-loading': '1' },
+          h('b', null, t.stockLoading), h('span', null, t.stockLoadingHint));
+      }
+      return h('div', null,
+        h('div', { className: 'wsb-stkMkBar' },
+          h('div', { className: 'wsb-stkMkWho' }, h('b', null, t.stockMarketsTitle)),
+          h('button', {
+            type: 'button', className: 'wsb-btn', 'data-stock-mk-refresh': '1',
+            'data-busy': busy ? 'true' : 'false', disabled: busy,
+            onClick: onRefresh,
+          }, busy ? t.stockRefreshing : t.stockRefresh)),
+        state.error
+          ? h('div', { className: 'wsb-stkNote', 'data-tone': 'warn', 'data-stock-mk-error': '1' }, t.stockFetchFailed + '：' + state.error)
+          : null,
+        cards.length
+          ? h('div', { className: 'wsb-stkMkGrid', 'data-stock-markets': '1' }, cards)
+          : h('div', { className: 'wsb-nwEmpty' }, h('b', null, t.stockMkEmpty)));
+    }
+
+    /**
+     * 一个板块的成分股表。
+     *
+     * 排序、搜索、方向全部在**客户端**做：Host 只保证「按涨幅降序的前 N 条」，因为东财的
+     * `fid` 只有 f3 真的会排序（见 stocks.js 文件头的实测）。所以这里的排序是"在切片里排"，
+     * 这一点在计数行里如实写出来，不假装它是全市场排名。
+     */
+    function StockMembers({ t, lang, state, onBack, onRefresh, busy }) {
+      const [sortId, setSortId] = useState('pct');
+      const [desc, setDesc] = useState(true);
+      const [query, setQuery] = useState('');
+      const market = state.market;
+      const digits = market && Number.isFinite(market.decimals) ? market.decimals : 2;
+
+      const shown = useMemo(() => {
+        const needle = query.trim().toLowerCase();
+        let list = state.rows;
+        if (needle) {
+          list = list.filter((row) => String(row.code).toLowerCase().indexOf(needle) >= 0
+            || String(row.name).toLowerCase().indexOf(needle) >= 0);
+        }
+        const sort = mkSortOf(sortId);
+        const list2 = list.slice();
+        list2.sort((left, right) => {
+          if (sort.text) {
+            const a = String(sort.value(left) || '');
+            const b = String(sort.value(right) || '');
+            return (desc ? -1 : 1) * a.localeCompare(b);
+          }
+          const a = sort.value(left);
+          const b = sort.value(right);
+          const na = Number.isFinite(a) ? a : null;
+          const nb = Number.isFinite(b) ? b : null;
+          // 缺值永远排在最后，无论升序还是降序 —— 否则「按市值」的第一屏会是一堆空行。
+          if (na === null && nb === null) return 0;
+          if (na === null) return 1;
+          if (nb === null) return -1;
+          return (desc ? -1 : 1) * (na - nb);
+        });
+        return list2;
+      }, [state.rows, query, sortId, desc]);
+
+      const headCell = (key, label, sortable) => h('th', {
+        key,
+        'data-sortable': sortable ? '1' : 'false',
+        'data-on': sortable && sortId === key ? 'true' : 'false',
+        onClick: sortable ? () => {
+          if (sortId === key) setDesc((value) => !value);
+          else { setSortId(key); setDesc(mkSortOf(key).dir < 0) }
+        } : undefined,
+        title: sortable ? (desc ? t.stockMkDirDesc : t.stockMkDirAsc) : '',
+      }, label);
+
+      const rowNodes = shown.map((row) => {
+        const dir = mkDir(row.pct);
+        const low = Number.isFinite(row.low) ? row.low : null;
+        const high = Number.isFinite(row.high) ? row.high : null;
+        // 现价在当日区间里的位置。区间无效时整条不渲染，而不是画一根骗人的中位线。
+        let position = null;
+        if (low !== null && high !== null && high > low && Number.isFinite(row.price)) {
+          position = Math.max(0, Math.min(1, (row.price - low) / (high - low)));
+        }
+        return h('tr', {
+          key: row.code, 'data-dir': dir, 'data-stock-member': row.code,
+        },
+          h('td', { 'data-code': '1' }, row.code),
+          h('td', { 'data-name': '1', title: row.name }, row.name),
+          h('td', { 'data-num': '1' }, mkFixed(row.price, row.decimals === undefined ? digits : row.decimals)),
+          h('td', { 'data-pct': '1' }, mkPct(row.pct)),
+          h('td', { 'data-num': '1' }, mkCompact(row.amount, lang)),
+          h('td', { 'data-num': '1' }, Number.isFinite(row.turnover) ? mkFixed(row.turnover, 2) + '%' : '—'),
+          h('td', { 'data-num': '1' }, Number.isFinite(row.pe) ? mkFixed(row.pe, 2) : '—'),
+          h('td', { 'data-num': '1' }, mkCompact(row.marketCap, lang)),
+          h('td', { 'data-num': '1' }, Number.isFinite(row.amplitude) ? mkFixed(row.amplitude, 2) + '%' : '—'),
+          h('td', null, position === null ? '—' : h('div', { className: 'wsb-stkMkRange' },
+            h('em', null, mkFixed(low, digits)),
+            h('i', null, h('b', { style: { left: (position * 100).toFixed(1) + '%' } })),
+            h('em', null, mkFixed(high, digits)))));
+      });
+
+      const scopeNote = market && market.scope === 'rank' ? t.stockMkRankOnly : t.stockMkBoardAll;
+
+      return h('div', { 'data-stock-members-view': market ? market.id : '1' },
+        h('div', { className: 'wsb-stkMkBar' },
+          h('button', {
+            type: 'button', className: 'wsb-btn', 'data-stock-mk-back': '1', onClick: onBack,
+          }, '‹ ' + t.stockMkBack),
+          h('div', { className: 'wsb-stkMkWho' },
+            h('b', null, (market && market.name) || t.stockViewMembers),
+            h('span', { className: 'wsb-stkMkCount' },
+              t.stockMkTotal + ' ' + mkFixed(state.total, 0) + ' ' + t.stockMkShownN + ' ' + shown.length + ' ' + scopeNote)),
+          h('input', {
+            className: 'wsb-input', 'data-stock-mk-search': '1', value: query,
+            placeholder: t.stockMkSearch, 'aria-label': t.stockMkSearch,
+            onChange: (event) => setQuery(event.target.value),
+          }),
+          h('button', {
+            type: 'button', className: 'wsb-btn', 'data-stock-mk-refresh': '1',
+            'data-busy': busy ? 'true' : 'false', disabled: busy,
+            onClick: onRefresh,
+          }, busy ? t.stockRefreshing : t.stockRefresh)),
+        // 单独一条说明「这是多少只里的多少只」，因为板块可以是 1846 只而这里只给一片。
+        h('div', { className: 'wsb-stkStatus', 'data-stock-mk-status': '1' },
+          h('span', null, market ? market.region : ''),
+          h('span', null, t.stockMkTotal + ' ' + mkFixed(state.total, 0) + ' ' + t.stockMkShownN + ' ' + state.rows.length),
+          h('span', null, scopeNote)),
+        state.error
+          ? h('div', { className: 'wsb-stkNote', 'data-tone': 'warn', 'data-stock-mk-error': '1' }, t.stockFetchFailed + '：' + state.error)
+          : null,
+        state.needsRestart
+          ? h('div', { className: 'wsb-stkNote', 'data-tone': 'warn', 'data-stock-mk-restart': '1' }, t.stockMkRestart)
+          : null,
+        state.loading && !state.rows.length
+          ? h('div', { className: 'wsb-nwEmpty', 'data-stock-mk-loading': '1' },
+            h('b', null, t.stockLoading), h('span', null, t.stockLoadingHint))
+          : shown.length
+            ? h('div', { className: 'wsb-stkMkWrap' },
+              h('table', { className: 'wsb-stkTable', 'data-stock-members': '1' },
+                h('thead', null, h('tr', null,
+                  headCell('code', t.stockMkColCode, true),
+                  h('th', { key: 'name' }, t.stockMkColName),
+                  headCell('price', t.stockMkColPrice, true),
+                  headCell('pct', t.stockMkColPct, true),
+                  headCell('amount', t.stockMkColAmount, true),
+                  headCell('turnover', t.stockMkColTurnover, true),
+                  h('th', { key: 'pe' }, t.stockMkColPe),
+                  headCell('marketCap', t.stockMkColCap, true),
+                  h('th', { key: 'amp' }, t.stockMkColAmp),
+                  h('th', { key: 'range' }, t.stockMkColRange))),
+                h('tbody', null, rowNodes)))
+            : h('div', { className: 'wsb-nwEmpty', 'data-stock-mk-none': '1' }, h('b', null, t.stockMkEmpty)));
+    }
+
+    //#endregion
+
     function StockView({ t, lang, module, patchModule, appearance, onBack, anim, screenStyle, onAnimEnd }) {
       const data = useStockData(module, patchModule);
       const { stock, busy, error, status, needsRestart, refresh } = data;
       const [picking, setPicking] = useState(false);
       const [sweep, setSweep] = useState(false);
+      // 打开的板块（null = 还在板块墙）。刻意**不进模块状态**：这是一次点击进去看一眼的动作，
+      // 不是这个模块的长期配置，下次进来应该又看到板块墙。
+      const [openMarket, setOpenMarket] = useState(null);
+      const [mkToken, setMkToken] = useState(0);
+      const marketsData = useStockMarkets(stock.view === 'markets');
+      const membersData = useStockMembers(openMarket, mkToken);
 
       const patchStock = useCallback((mutate) => patchModule(module.id, (target) => {
         const settings = normalizeStockSettings(target.stock);
@@ -11784,13 +12190,18 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button', className: 'wsb-segBtn', 'data-stock-view': 'board',
               'data-on': stock.view === 'board' ? 'true' : 'false',
-              onClick: () => patchStock((settings) => { settings.view = 'board' }),
+              onClick: () => { setOpenMarket(null); patchStock((settings) => { settings.view = 'board' }) },
             }, t.stockViewBoard),
             h('button', {
               type: 'button', className: 'wsb-segBtn', 'data-stock-view': 'table',
               'data-on': stock.view === 'table' ? 'true' : 'false',
-              onClick: () => patchStock((settings) => { settings.view = 'table' }),
-            }, t.stockViewTable))),
+              onClick: () => { setOpenMarket(null); patchStock((settings) => { settings.view = 'table' }) },
+            }, t.stockViewTable),
+            h('button', {
+              type: 'button', className: 'wsb-segBtn', 'data-stock-view': 'markets',
+              'data-on': stock.view === 'markets' ? 'true' : 'false',
+              onClick: () => { setOpenMarket(null); patchStock((settings) => { settings.view = 'markets' }) },
+            }, t.stockViewMarkets))),
         h('div', { className: 'wsb-stkGroup' },
           h('select', {
             className: 'wsb-select', 'data-stock-sort': '1', value: stock.sort,
@@ -11816,15 +12227,28 @@ window.__ModuleLoader__.load({
 
       // The status line is this screen's honesty clause: when a quote was read, how many markets
       // answered, and whether anything came from the fallback. It is never hidden.
-      const statusLine = h('div', {
-        className: 'wsb-stkStatus', 'data-stock-status': '1',
-        'data-stock-stale': stale ? 'true' : 'false',
-      },
-        h('span', { 'data-stock-updated': '1' },
-          stale ? t.stockStale : t.stockUpdated + ' ' + (age || t.stockJustNow)),
-        h('span', null, answered + ' / ' + stock.markets.length + ' ' + t.stockSelectedN),
-        failed.length ? h('span', { 'data-stock-failed': String(failed.length) }, failed.length + ' ' + t.stockFailedN) : null,
-        usingFallback ? h('span', null, t.stockFallbackTag) : null);
+      // 板块视图下它衡量的是另一件事（多少个板块、几只个股），所以换一套说法 ——
+      // 拿指数的那三个数字去描述板块，是另一种形式的撒谎。
+      const statusLine = stock.view === 'markets'
+        ? h('div', { className: 'wsb-stkStatus', 'data-stock-status': '1', 'data-stock-status-scope': 'markets' },
+          h('span', null, marketsData.list.length
+            ? t.stockMarketsTitle + ' ' + marketsData.list.length
+            : ''),
+          h('span', null, openMarket
+            ? (t.stockMkTotal + ' ' + mkFixed(membersData.total, 0) + ' ' + t.stockMkShownN + ' ' + membersData.rows.length)
+            : t.stockMarketsHint),
+          marketsData.error || membersData.error
+            ? h('span', { 'data-stock-failed': '1' }, t.stockFetchFailed)
+            : null)
+        : h('div', {
+          className: 'wsb-stkStatus', 'data-stock-status': '1',
+          'data-stock-stale': stale ? 'true' : 'false',
+        },
+          h('span', { 'data-stock-updated': '1' },
+            stale ? t.stockStale : t.stockUpdated + ' ' + (age || t.stockJustNow)),
+          h('span', null, answered + ' / ' + stock.markets.length + ' ' + t.stockSelectedN),
+          failed.length ? h('span', { 'data-stock-failed': String(failed.length) }, failed.length + ' ' + t.stockFailedN) : null,
+          usingFallback ? h('span', null, t.stockFallbackTag) : null);
 
       const notices = [
         needsRestart ? h('div', { key: 'restart', className: 'wsb-stkNote', 'data-tone': 'warn', 'data-stock-restart': '1' }, t.stockRestartHint) : null,
@@ -11836,12 +12260,27 @@ window.__ModuleLoader__.load({
       const body = busy && !stock.last.length
         ? h('div', { className: 'wsb-nwEmpty', 'data-stock-loading': '1' },
           h('b', null, t.stockLoading), h('span', null, t.stockLoadingHint))
-        : !stock.markets.length
-          ? h('div', { className: 'wsb-nwEmpty' }, h('b', null, t.stockEmpty))
-          : stock.view === 'table'
-            ? h(StockTable, { t, lang, rows })
-            : h('div', { className: 'wsb-stkTiles', 'data-stock-tiles': '1' },
-              rows.map((row, index) => h(StockTile, { key: row.id, t, lang, row, index })));
+        : stock.view === 'markets'
+          // 板块墙与成分股是同一件事的两层：没有打开任何板块时给墙，打开了就给那一张表。
+          ? (openMarket
+            ? h(StockMembers, {
+              t, lang, state: membersData,
+              onBack: () => setOpenMarket(null),
+              onRefresh: () => setMkToken((value) => value + 1),
+              busy: membersData.loading,
+            })
+            : h(StockMarkets, {
+              t, state: marketsData,
+              onOpen: (id) => setOpenMarket(id),
+              onRefresh: () => { marketsData.reload && marketsData.reload() },
+              busy: marketsData.loading,
+            }))
+          : !stock.markets.length
+            ? h('div', { className: 'wsb-nwEmpty' }, h('b', null, t.stockEmpty))
+            : stock.view === 'table'
+              ? h(StockTable, { t, lang, rows })
+              : h('div', { className: 'wsb-stkTiles', 'data-stock-tiles': '1' },
+                rows.map((row, index) => h(StockTile, { key: row.id, t, lang, row, index })));
 
       return h('div', {
         className: 'wsb-screen', 'data-role': 'stock', 'data-anim': anim, style: screenStyle,

@@ -300,6 +300,84 @@ async function main() {
       for (const id of body.defaults) assert(ids.has(id), 'the default selection names unknown market ' + id);
     });
 
+    await check('the board list is fenced the same way the catalog is', async () => {
+      const bare = await fetch(base + '/workbench-stocks?op=markets');
+      assert(bare.status === 403, 'the board list answered without the client marker: ' + bare.status);
+      const response = await fetch(base + '/workbench-stocks?op=markets', { headers: stockHeaders });
+      assert(response.status === 200, 'markets returned ' + response.status);
+      const body = await response.json();
+      assert(body.ok === true, 'markets is not ok');
+      assert(Array.isArray(body.markets) && body.markets.length >= 6,
+        'too few boards to be worth a drill-down: ' + (body.markets || []).length);
+      const ids = new Set();
+      for (const market of body.markets) {
+        assert(typeof market.id === 'string' && market.id, 'a board has no id');
+        assert(typeof market.name === 'string' && market.name, 'board ' + market.id + ' has no name');
+        assert(market.scope === 'board' || market.scope === 'rank',
+          'board ' + market.id + ' has an unexplained scope: ' + market.scope);
+        assert(!ids.has(market.id), 'duplicate board id ' + market.id);
+        ids.add(market.id);
+        // 与 catalog 同一条围栏：客户端只能说「哪个板块」，永远不能说出要抓的地址。
+        // 注意用 `in` 而不是 `!== undefined`：`fs` 是 `offset` 的子串，用字符串包含去查会误报。
+        for (const leak of ['fs', 'url', 'secid', 'eastmoney', 'push2']) {
+          assert(!(leak in market), 'the board list leaks `' + leak + '` for ' + market.id);
+        }
+      }
+    });
+
+    await check('a board id that is not in the catalog is refused, never fetched', async () => {
+      for (const id of ['nope', '../../etc/passwd', 'https://evil.test/x', 'm:1+t:2']) {
+        const response = await fetch(base + '/workbench-stocks?op=members', {
+          method: 'POST',
+          headers: Object.assign({ 'content-type': 'application/json' }, stockHeaders),
+          body: JSON.stringify({ id, limit: 20 }),
+        });
+        assert(response.status === 200, 'a refused board returned ' + response.status);
+        const body = await response.json();
+        assert(body.ok === false, 'board `' + id + '` was accepted: ' + JSON.stringify(body).slice(0, 120));
+        assert(typeof body.error === 'string' && body.error, 'the refusal carries no reason');
+        assert(!('rows' in body) || !body.rows.length, 'a refused board still returned rows');
+      }
+    });
+
+    await check('opening a board returns its constituent stocks with prices', async () => {
+      const response = await fetch(base + '/workbench-stocks?op=members', {
+        method: 'POST',
+        headers: Object.assign({ 'content-type': 'application/json' }, stockHeaders),
+        // 沪深主板是 A 股里最稳的一个板块，用它做这条断言；不 refresh 以免每次都打网络。
+        body: JSON.stringify({ id: 'shmain', limit: 40 }),
+      });
+      assert(response.status === 200, 'members returned ' + response.status);
+      const body = await response.json();
+      if (body.ok !== true) {
+        // 网络不可用时这条断言不该把整个自检判死，但必须把原因说出来。
+        assert(typeof body.error === 'string' && body.error, 'a failed members call carries no reason');
+        console.log('        (skipped price assertions: ' + body.error + ')');
+        return;
+      }
+      assert(body.market && body.market.id === 'shmain', 'the wrong board came back');
+      assert(Array.isArray(body.rows) && body.rows.length > 0, 'no constituent rows');
+      assert(body.total >= body.rows.length,
+        'the board total (' + body.total + ') is smaller than the slice (' + body.rows.length + ')');
+      for (const row of body.rows) {
+        assert(typeof row.code === 'string' && row.code, 'a row has no code');
+        assert(typeof row.name === 'string' && row.name, 'row ' + row.code + ' has no name');
+        // 每一行都必须有价格：没有价格的行（窝轮、票据、退市代码）在 Host 侧就被丢掉了，
+        // 否则读者的第一屏会是一片空白。
+        assert(typeof row.price === 'number' && Number.isFinite(row.price),
+          'row ' + row.code + ' has no usable price');
+        // 缺值要如实是 null，不能悄悄变成 0 —— 0 是一个会被人当真的数字。
+        for (const key of ['pct', 'amount', 'turnover', 'pe', 'marketCap']) {
+          assert(row[key] === null || Number.isFinite(row[key]),
+            'row ' + row.code + '.' + key + ' is neither a number nor null: ' + row[key]);
+        }
+        // 与两条报价路由同一条围栏：成分股里也不能出现可抓取的字段。
+        for (const leak of ['secid', 'fs', 'f12', 'f2']) {
+          assert(!(leak in row), 'a constituent row leaks `' + leak + '`');
+        }
+      }
+    });
+
     await check('an empty or invented selection is refused instead of fetching something', async () => {
       for (const body of [{ ids: [] }, { ids: ['not-a-market'] }, { ids: ['../../etc/passwd'] }, {}]) {
         const response = await fetch(base + '/workbench-stocks', {

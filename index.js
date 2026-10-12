@@ -39,7 +39,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, isAbsolute } from 'node:path';
 import { articleImages, collectNews, enrichArticle, newsCatalog, translateTexts } from './news.js';
-import { collectQuotes, stockCatalog } from './stocks.js';
+import { collectMembers, collectQuotes, stockCatalog, stockMarkets } from './stocks.js';
 
 /** Services this plugin cannot work without; the loader waits for them before `apply`. */
 export const inject = ['webServer'];
@@ -273,10 +273,12 @@ async function serveNews(req, res) {
 }
 
 /**
- * The stock route. Two operations on one path, because they are one feature:
+ * The stock route. Three operations on one path, because they are one feature:
  *
  *   GET  ?op=catalog                  → the market catalog and the shipped default selection
  *   POST (body = `{ ids, refresh }`)  → the latest quote for each requested market
+ *   GET  ?op=markets                  → the boards that can be opened (点进去看成分股)
+ *   POST ?op=members (body = `{ id, limit, refresh }`) → one board's constituent stocks
  *
  * A body-based query for the same reason as the news route: a selection of twelve market ids
  * plus a refresh flag is small, but it is a *selection*, and a query string is the wrong shape
@@ -299,6 +301,19 @@ async function serveStocks(req, res) {
 
   try {
     if (op === 'catalog') return replyJson(res, 200, stockCatalog());
+    if (op === 'markets') return replyJson(res, 200, stockMarkets());
+    if (op === 'members') {
+      // GET + spec exists for the same reason as the quotes one: drivable from a shell and
+      // from the offline self-test without building a POST body.
+      let request;
+      if (req.method === 'POST') {
+        request = await readJsonBody(req, 32 * 1024);
+      } else {
+        const spec = url.searchParams.get('spec');
+        request = spec ? JSON.parse(spec) : { id: url.searchParams.get('id') || '' };
+      }
+      return replyJson(res, 200, await collectMembers(request));
+    }
     if (op === 'quotes') {
       let request;
       if (req.method === 'POST') {

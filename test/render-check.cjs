@@ -6019,11 +6019,56 @@ async function main() {
   ];
 
   /**
-   * Answer the two operations the board calls: the catalog, and the quotes themselves.
-   * `quotes` is what a collect returns; extra operations are handled by an explicit `handler`.
+   * The boards the drill-down offers, in the shape `/workbench-stocks?op=markets` returns.
+   * One `board` (a complete list) and one `rank` (an active slice) so both captions are exercised.
    */
-  const stubStocks = (quotes, stats) => {
+  const STOCK_MARKETS_STUB = [
+    { id: 'shmain', name: '沪市主板', region: 'A股', decimals: 2, scope: 'board' },
+    { id: 'cyb2', name: '创业板', region: 'A股', decimals: 2, scope: 'board' },
+    { id: 'nasdaq', name: '纳斯达克', region: '美股', decimals: 2, scope: 'rank' },
+  ];
+
+  /** One constituent row, in the shape `/workbench-stocks?op=members` returns it. */
+  const stockMember = (over) => Object.assign({
+    code: '600519', name: '贵州茅台', price: 1280.06, decimals: 2,
+    pct: 1.35, change: 17.06, volume: 11398, amount: 1455657278,
+    amplitude: 1.85, turnover: 0.09, pe: 20.41, pb: 8.1,
+    high: 1284.44, low: 1261, open: 1262.95, prevClose: 1263,
+    marketCap: 1600179454176, floatCap: 1600179454176, board: '1',
+  }, over);
+
+  /**
+   * Answer the operations the board calls: the catalog, the quotes, the board list and a
+   * board's constituents. `quotes` is what a collect returns; extra operations are handled by
+   * an explicit `handler`.
+   */
+  const stubStocks = (quotes, stats, members) => {
     fetchHandler = (url, init) => {
+      if (url.indexOf('op=markets') >= 0) {
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            ok: true, regions: ['A股', '美股'], markets: STOCK_MARKETS_STUB, limit: 200,
+          }),
+        };
+      }
+      if (url.indexOf('op=members') >= 0) {
+        const body = JSON.parse(init.body || '{}');
+        const board = STOCK_MARKETS_STUB.find((item) => item.id === body.id);
+        if (!board) {
+          return { ok: true, json: () => Promise.resolve({ ok: false, error: '未知的市场板块：' + (body.id || '') }) };
+        }
+        const rows = (members || [stockMember()]).filter((row) => row.board === body.id || board.id === body.id);
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            ok: true, fetchedAt: Date.now(),
+            market: board, total: board.id === 'shmain' ? 1846 : rows.length,
+            shown: rows.length, rows,
+            stats: { tookMs: 21, pages: 1, cached: false, hint: '' },
+          }),
+        };
+      }
       if (url.indexOf('op=catalog') >= 0) {
         return {
           ok: true,
@@ -6060,8 +6105,8 @@ async function main() {
   }, over);
 
   /** Seed storage with exactly one stock module, then open it. Returns the settled view. */
-  const openStock = async (over, quotes, stats, handler, stateExtra) => {
-    stubStocks(quotes || [], stats);
+  const openStock = async (over, quotes, stats, handler, stateExtra, members) => {
+    stubStocks(quotes || [], stats, members);
     // An explicit handler wins, so a test that wants a 404 or a 500 overrides the stub after it.
     if (handler) fetchHandler = handler;
     seedState(Object.assign({
@@ -6342,6 +6387,105 @@ async function main() {
       throw new Error('the region filter did not narrow the board to 美股, saw ' + JSON.stringify(ids));
     }
     if (storedStockState().region !== '美股') throw new Error('the region choice was not persisted');
+  });
+
+  await check('the 板块 view lists openable boards and reports scope honestly', async () => {
+    const view = await openStock({
+      stock: { markets: ['sh', 'sz'], region: 'all', view: 'markets', sort: 'catalog', catalog: STOCK_CATALOG_STUB, catalogAt: Date.now(), last: [], lastFetchAt: 0 },
+    }, [stockQuote({ id: 'sh' }), stockQuote({ id: 'sz' })]);
+    const cards = view.elements.filter((element) => element.props['data-stock-market'] !== undefined);
+    if (cards.length !== STOCK_MARKETS_STUB.length) {
+      throw new Error('expected ' + STOCK_MARKETS_STUB.length + ' board cards, saw ' + cards.length);
+    }
+    if (!view.elements.some((element) => element.props['data-stock-markets'] === '1')) {
+      throw new Error('the board grid has no marker');
+    }
+    // 每个板块卡都必须说清它是「完整名单」还是「活跃榜」—— 这句话决定读者怎么理解计数行。
+    const text = JSON.stringify(view.elements);
+    if (text.indexOf('完整名单') < 0) throw new Error('a complete board does not say it is complete');
+    if (text.indexOf('活跃榜') < 0) throw new Error('an active-slice board does not say it is a slice');
+    // 板块视图下状态行衡量的不该是指数的「几个市场」，否则数字与画面不符。
+    const status = view.elements.find((element) => element.props['data-stock-status'] === '1');
+    if (status.props['data-stock-status-scope'] !== 'markets') {
+      throw new Error('the status line still describes the index selection in board view');
+    }
+  });
+
+  await check('clicking a board opens its constituents, and they can be searched and sorted', async () => {
+    const members = [
+      stockMember({ code: '600519', name: '贵州茅台', pct: 1.35, amount: 1455657278, board: 'shmain' }),
+      stockMember({ code: '601318', name: '中国平安', pct: -0.82, amount: 987654321, board: 'shmain' }),
+      stockMember({ code: '600036', name: '招商银行', pct: null, amount: null, marketCap: null, board: 'shmain' }),
+    ];
+    const view = await openStock({
+      stock: { markets: ['sh'], region: 'all', view: 'markets', sort: 'catalog', catalog: STOCK_CATALOG_STUB, catalogAt: Date.now(), last: [], lastFetchAt: 0 },
+    }, [stockQuote({ id: 'sh' })], undefined, undefined, undefined, members);
+
+    // 点第一张板块卡 → 进入成分股（成分股是异步取回来的，所以要等 settle）
+    harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-stock-market'] === 'shmain'));
+    const opened = await settle();
+    const rows = () => opened.elements.filter((element) => element.props['data-stock-member'] !== undefined);
+    if (!opened.elements.some((element) => element.props['data-stock-members'] === '1')) {
+      throw new Error('the constituents table did not render');
+    }
+    if (rows().length !== members.length) {
+      throw new Error('expected ' + members.length + ' constituent rows, saw ' + rows().length);
+    }
+    // 计数行必须同时给出「板块共多少只」和「本次显示多少只」，而且板块数是真实的 1846 而不是切片长度。
+    const countText = JSON.stringify(opened.elements);
+    if (countText.indexOf('1846') < 0) throw new Error('the board total is not shown');
+    if (countText.indexOf('3') < 0) throw new Error('the shown count is not shown');
+    // 缺值必须是破折号，不能变成数字 0 —— 0 是一个会被当真的价格。
+    const flat = JSON.stringify(rows().map((row) => row.children));
+    if (flat.indexOf('"—"') < 0 && flat.indexOf('—') < 0) {
+      throw new Error('a missing value did not render as a dash');
+    }
+    // 返回按钮回到板块墙
+    const back = await settle();
+    harness.click(runtime, (element) => element.props['data-stock-mk-back'] === '1');
+    const returned = await settle();
+    if (!returned.elements.some((element) => element.props['data-stock-markets'] === '1')) {
+      throw new Error('the back button did not return to the board list');
+    }
+    void back;
+  });
+
+  await check('the constituent search filters rows and an empty result is explained', async () => {
+    const members = [
+      stockMember({ code: '600519', name: '贵州茅台', board: 'shmain' }),
+      stockMember({ code: '000001', name: '平安银行', board: 'shmain' }),
+    ];
+    const opened = await openStock({
+      stock: { markets: ['sh'], region: 'all', view: 'markets', sort: 'catalog', catalog: STOCK_CATALOG_STUB, catalogAt: Date.now(), last: [], lastFetchAt: 0 },
+    }, [stockQuote({ id: 'sh' })], undefined, undefined, undefined, members);
+    void opened;
+    harness.click(runtime, (element) => element.props['data-stock-market'] === 'shmain');
+    await settle();
+    const field = () => runtime.sink.elements.find((element) => element.props['data-stock-mk-search'] === '1');
+    if (!field()) throw new Error('the constituents view has no search field');
+    field().props.onChange({ target: { value: '茅台' } });
+    const narrowed = await settle();
+    const rows = narrowed.elements.filter((element) => element.props['data-stock-member'] !== undefined);
+    if (rows.length !== 1) throw new Error('the search did not narrow to one row, saw ' + rows.length);
+    field().props.onChange({ target: { value: '不存在的股票' } });
+    const none = await settle();
+    if (none.elements.filter((element) => element.props['data-stock-member'] !== undefined).length !== 0) {
+      throw new Error('a search with no matches still rendered rows');
+    }
+    if (!none.elements.some((element) => element.props['data-stock-mk-none'] === '1')) {
+      throw new Error('an empty search result was not explained');
+    }
+  });
+
+  await check('a missing members route is reported as "restart", not as an empty board', async () => {
+    const notFound = () => ({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    const view = await openStock({
+      stock: { markets: ['sh'], region: 'all', view: 'markets', sort: 'catalog', catalog: STOCK_CATALOG_STUB, catalogAt: Date.now(), last: [], lastFetchAt: 0 },
+    }, [stockQuote({ id: 'sh' })], undefined, notFound);
+    if (!view.elements.some((element) => element.props['data-stock-mk-restart'] === '1')) {
+      throw new Error('a 404 on the boards route was not recognised as a missing Host half');
+    }
   });
 
   await check('a failing market is reported without emptying the board', async () => {
