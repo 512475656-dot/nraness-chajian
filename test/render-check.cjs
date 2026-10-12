@@ -1530,8 +1530,10 @@ async function main() {
     if (/\[data-glass="regular"\] \.wsb-card[\s\S]{0,160}?url\(#wsbLens\)/.test(source)) {
       throw new Error('柔光被改了(它必须保持原样)');
     }
-    // 兜底: 不写 url() 的那条声明必须还在(不支持 url() 的引擎靠它)
-    if (!/backdrop-filter:blur\(var\(--wsb-glass-blur,26px\)\) saturate\(var\(--wsb-glass-sat,170%\)\)\n\s*brightness\(var\(--wsb-glass-bright,1\)\);/.test(source)) {
+    // 兜底: 不写 url() 的那条声明必须还在(不支持 url() 的引擎靠它).
+    // 别在这里钉死具体数值 —— 兜底的作用只是"没有 url() 时也要有模糊+亮度",
+    // 把 26px / 170% / 换行缩进都写进正则会让一次无关的调参就误报.
+    if (!/backdrop-filter:blur\(var\(--wsb-glass-blur[^;]*brightness\(var\(--wsb-glass-bright/.test(source)) {
       throw new Error('缺少不含 url() 的兜底声明');
     }
     // 厚塑料: 顶部高光 + 底部内阴影
@@ -2385,7 +2387,11 @@ async function main() {
     const after = /\.wsb-card\[data-running="true"\]::after\{([\s\S]{0,600}?)\}/.exec(source);
     if (!after) throw new Error('the running tile has no highlight layer');
     const body = after[1];
-    if (!/offset-path:inset\(/.test(body)) throw new Error('the highlight is not a ring tracing the tile edge');
+    // 光带贴内缘靠的是 mask(content-box + exclude), 不是 offset-path.
+    // 早先这里断言 offset-path:inset( —— 那条路径与外框不重合、圆角越大偏得越多,
+    // 已被 mask 方案取代, 所以断言改成检查真正的几何机制, 并防止退回去.
+    if (!/padding:2px/.test(body)) throw new Error('the highlight is not a ring tracing the tile edge');
+    if (/offset-path/.test(body)) throw new Error('the highlight went back to offset-path, which drifts off the frame at large radii');
     if (!/animation:wsb-trace/.test(body)) throw new Error('the trace does not animate');
     if (!/conic-gradient\(from var\(--wsb-trace\)/.test(body) || !/mask-composite:exclude/.test(body)) throw new Error('the highlight is not a ring tracing the tile edge');
     if (/hue-rotate/.test(body) || /filter:(?!blur\(\.5px\))/.test(body)) throw new Error('the highlight still costs a filter pass');
