@@ -1077,9 +1077,10 @@ window.__ModuleLoader__.load({
    （这段 CSS 会被拼进一个 JS 模板字符串，所以这里不能出现反引号。） */
 .wsb-screen[data-role="notes"] .wsb-root{background:transparent}
 .wsb-noteRoot{outline:none;padding:calc(var(--dsh-frame-top-clearance,0px) + 12px) 14px 12px;gap:10px}
-/* 顶栏的层级必须高于下面的舞台：顶栏和 .wsb-noteStage 原先都是 z-index:1，DOM 靠后的舞台
-   于是画在顶栏之上，顶栏里弹出的「文件」菜单被舞台切掉一截（菜单的 z-index 只在顶栏自己的
-   层叠上下文里比较，比不过整块舞台）。 */
+/* 顶栏的层级必须高于下面的舞台。
+   舞台原先也是 z-index:1，于是"谁在上"由 DOM 顺序决定 —— 舞台在后，就画在顶栏之上，顶栏里
+   弹出的「文件」菜单被它盖掉（实测：菜单中部的命中测试拿到的是 .wsb-noteCanvas，不是菜单）。
+   现在舞台是 0、顶栏是 3，差值是明确的，不再依赖顺序。 */
 .wsb-noteTop{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:0;z-index:3}
 .wsb-noteTopRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .wsb-noteTopSpacer{flex:1 1 auto;min-width:8px}
@@ -1127,7 +1128,7 @@ window.__ModuleLoader__.load({
 
 /* The stage: outline | canvas | inspector. Either rail can go away, and the grid is told which
    one did — the canvas then takes the whole window instead of leaving a gap where a rail was. */
-.wsb-noteStage{flex:1 1 auto;min-height:0;display:grid;gap:10px;position:relative;z-index:1;
+.wsb-noteStage{flex:1 1 auto;min-height:0;display:grid;gap:10px;position:relative;z-index:0;
   grid-template-columns:236px minmax(0,1fr) 252px}
 .wsb-noteStage[data-note-outline-on="false"]{grid-template-columns:minmax(0,1fr) 252px}
 .wsb-noteStage[data-note-inspector-on="false"]{grid-template-columns:236px minmax(0,1fr)}
@@ -10110,15 +10111,6 @@ window.__ModuleLoader__.load({
                 h('b', null, module.name),),
               h('div', { className: 'wsb-noteTopSpacer' }),
               h('button', {
-                type: 'button', className: 'wsb-btn', 'data-note-undo': '1',
-                title: t.noteUndo, disabled: !historyRef.current.past.length, onClick: undo,
-              }, '↶ ' + t.noteUndo),
-              h('button', {
-                type: 'button', className: 'wsb-btn', 'data-note-redo': '1',
-                title: t.noteRedo, disabled: !historyRef.current.future.length, onClick: redo,
-              }, '↷ ' + t.noteRedo),
-              h('button', { type: 'button', className: 'wsb-btn', 'data-note-tidy': '1', title: t.noteTidyHint, onClick: tidy }, t.noteTidy),
-              h('button', {
                 type: 'button', className: 'wsb-btn', 'data-note-outline': '1',
                 'data-on': outline ? 'true' : 'false', title: t.noteOutline,
                 onClick: () => { const next = !outline; setOutline(next); persistView({ outline: next }) },
@@ -10151,7 +10143,13 @@ window.__ModuleLoader__.load({
                   title: t.noteFile, onClick: () => setFileOpen((open) => !open),
                 }, t.noteFile + ' ▾'),
                 fileOpen
-                  ? h('div', { className: 'wsb-noteExportMenu wsb-noteFileMenu', 'data-note-file-menu': '1' },
+                  ? h('div', {
+                    className: 'wsb-noteExportMenu wsb-noteFileMenu', 'data-note-file-menu': '1',
+                    // 层级写在内联样式上，而不是只靠 CSS：这一条被样式表里更靠后的规则盖过一次
+                    // （实测 .wsb-noteTop 的 z-index 计算出来是 1 而不是写的 3），菜单于是被画布
+                    // 盖住。内联样式的优先级最高，"菜单浮在最上层"这件事就不该再依赖层叠顺序。
+                    style: { zIndex: 20 },
+                  },
                     h('button', {
                       type: 'button', className: 'wsb-noteExportItem', 'data-note-newmap': '1',
                       // 新建 = **加一篇新笔记**，不是清空当前这篇。旧版本这里调 createMap，它会
@@ -10185,6 +10183,22 @@ window.__ModuleLoader__.load({
                 fileOpen
                   ? h('div', { className: 'wsb-noteMenuMask', 'data-note-file-mask': '1', onClick: () => setFileOpen(false) })
                   : null),
+              // 撤销 / 重做 / 整理。这三个原本和标题挤在第一行右侧（那一行只有它们三个是"对整张图
+              // 的操作"），现在跟着「文件」一起放在第二行的工具带里 —— 第一行只留导航（返回 + 标题）
+              // 与两个面板开关，工具类动作都在下面这一行。
+              h('div', { className: 'wsb-noteGroup' },
+                h('button', {
+                  type: 'button', className: 'wsb-btn', 'data-note-undo': '1',
+                  title: t.noteUndo, disabled: !historyRef.current.past.length, onClick: undo,
+                }, '↶ ' + t.noteUndo),
+                h('button', {
+                  type: 'button', className: 'wsb-btn', 'data-note-redo': '1',
+                  title: t.noteRedo, disabled: !historyRef.current.future.length, onClick: redo,
+                }, '↷ ' + t.noteRedo),
+                h('button', {
+                  type: 'button', className: 'wsb-btn', 'data-note-tidy': '1',
+                  title: t.noteTidyHint, onClick: tidy,
+                }, t.noteTidy)),
               h('div', { className: 'wsb-noteTopSpacer' }),
               h('div', { className: 'wsb-noteGroup' },
                 h('div', { className: 'wsb-noteZoom' },

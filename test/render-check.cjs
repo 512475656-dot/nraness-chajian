@@ -3648,6 +3648,34 @@ async function main() {
         throw new Error('toolbar is missing ' + marker);
       }
     }
+    // 撤销 / 重做 / 整理 现在和「文件」同在**第二行**的工具带里，第一行只留导航与面板开关。
+    // 它们原来挤在第一行右侧，那一行只有这三个是"对整张图的操作"。
+    const inRow = (marker, rowIndex) => {
+      const row = view.elements.filter((element) => hasClass(element, 'wsb-noteTopRow'))[rowIndex];
+      if (!row) throw new Error('no toolbar row ' + rowIndex);
+      return JSON.stringify(row).indexOf("'" + marker + "'") >= 0
+        || JSON.stringify(row).indexOf('"' + marker + '"') >= 0;
+    };
+    for (const marker of ['data-note-undo', 'data-note-redo', 'data-note-tidy', 'data-note-file']) {
+      if (!inRow(marker, 1)) throw new Error(marker + ' is not in the second toolbar row');
+    }
+    for (const marker of ['data-note-outline', 'data-note-inspector']) {
+      if (!inRow(marker, 0)) throw new Error(marker + ' is not in the first toolbar row (it is a panel switch)');
+    }
+    if (inRow('data-note-undo', 0)) throw new Error('撤销 is still crowded into the title row');
+    // 文件菜单必须带一个内联的高层级：它曾经被画布盖掉（实测 .wsb-noteTop 的 z-index 计算成 1，
+    // 舞台又是 0，菜单整块落在画布下面），所以这一条不再只靠样式表。
+    const menuEl = fileMenuOpen.elements.find((element) => element.props['data-note-file-menu'] !== undefined);
+    const menuZ = menuEl.props.style && Number(menuEl.props.style.zIndex);
+    if (!(menuZ >= 10)) {
+      throw new Error('the 文件 menu has no explicit high z-index (got ' + JSON.stringify(menuEl.props.style) + ')');
+    }
+    // 舞台的层级必须低于顶栏，否则菜单会被它盖住。
+    const stageCss = /\.wsb-noteStage\{[^}]*?z-index:(-?\d+)/.exec(noteSource());
+    if (!stageCss) throw new Error('.wsb-noteStage no longer declares a z-index');
+    if (Number(stageCss[1]) > 0) {
+      throw new Error('.wsb-noteStage is at z-index ' + stageCss[1] + ', which lets it cover the top bar again');
+    }
     const label = view.elements.find((element) => element.props['data-note-zoom-label'] !== undefined);
     if (!/%$/.test(String(label.props['data-note-zoom-label']))) throw new Error('the zoom readout is not a percentage');
     if (view.text.indexOf('检查器') < 0) throw new Error('the inspector pane has no header');
