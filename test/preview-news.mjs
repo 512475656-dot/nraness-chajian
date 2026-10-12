@@ -367,7 +367,7 @@ tree = render(mainEntry.component, {});
 
 //#region element tree -> html
 
-const HTML_ATTRS = ['title', 'href', 'src', 'alt', 'role', 'value', 'placeholder', 'type', 'min', 'max', 'step', 'disabled', 'aria-label', 'loading', 'target', 'rel'];
+const HTML_ATTRS = ['x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'points', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'viewBox', 'opacity', 'title', 'href', 'src', 'alt', 'role', 'value', 'placeholder', 'type', 'min', 'max', 'step', 'disabled', 'aria-label', 'loading', 'target', 'rel'];
 const SKIP_ATTRS = ['onClick', 'onChange', 'onKeyDown', 'onDoubleClick', 'onPointerDown', 'onPointerMove', 'onPointerUp', 'onPointerCancel', 'onAnimationEnd', 'onBlur', 'ref', 'children', 'sourceMap'];
 
 function escapeHtml(value) {

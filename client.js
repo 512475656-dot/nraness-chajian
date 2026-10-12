@@ -1248,6 +1248,7 @@ window.__ModuleLoader__.load({
   stroke-width:1.3;stroke-linecap:round}
 .wsb-noteGuide[data-note-guide="axis"]{stroke-width:2}
 .wsb-noteGuide[data-note-guide="spine"]{stroke-width:2.6;stroke-linecap:square}
+/* 鱼骨的骨：一根 45° 的直线段（rib），从脊柱斜到卡片近角。 */
 .wsb-noteGuide[data-note-guide="rib"]{stroke-width:2.2}
 .wsb-noteGuide[data-note-guide="tick"]{stroke-width:1.1;opacity:.75}
 
@@ -8189,6 +8190,7 @@ window.__ModuleLoader__.load({
     const NOTE_AXIS_OFF = 30; // distance from the timeline axis to the first event card
     const NOTE_RIB = 96;      // fishbone rib: 96 across and 96 up, i.e. exactly 45°
     const NOTE_SUB_INDENT = 22; // lateral indent of one sub-level on a 时间轴 / 鱼骨 branch
+    const NOTE_TL_GAP = 30;   // gap between two consecutive events on the timeline axis
     const NOTE_PAD = 56;      // margin baked into every layout, for the selection ring
 
     /** Children that take part in a layout: a collapsed node hides its whole subtree. */
@@ -8463,10 +8465,21 @@ window.__ModuleLoader__.load({
       return { nodes, edges, width: widthOf.get(node) || 0, minY, maxY };
     }
 
-    /** Append a {@link noteAxisSubtree} result into a layout's arrays. */
+    /**
+     * Append a {@link noteAxisSubtree} result into a layout's arrays.
+     *
+     * The `stack` edges are dropped here on purpose. 时间轴 and 鱼骨图 draw their own axis and bones,
+     * and a sub-note is placed tight against the card it belongs to, so a wire from the parent's
+     * centre to it adds nothing but a long curve across the figure — the thing readers described as
+     * "the lines go inside the nodes". Dropping them from the *data* also means the layout no longer
+     * claims to draw something the renderer skips.
+     */
     function appendAxisSubtree(out, sub) {
       for (const node of sub.nodes) out.nodes.push(node);
-      for (const edge of sub.edges) out.edges.push(edge);
+      for (const edge of sub.edges) {
+        if (edge.kind === 'stack') continue;
+        out.edges.push(edge);
+      }
     }
 
     /**
@@ -8475,28 +8488,43 @@ window.__ModuleLoader__.load({
      * The axis and its ticks are part of the drawing, so the wire from the centre to an event is
      * suppressed (`kind: 'none'`) — a fan of lines across the axis would just be noise.
      */
+    /**
+     * 时间轴: the centre sits at the left end of a horizontal axis and the notes that hang off it
+     * are its **events**, laid out in order left→right and alternating above and below the axis.
+     *
+     * The axis and its ticks are part of the drawing, so no wire is drawn from the centre to an
+     * event (`kind: 'none'`): a fan of lines across the axis is exactly the noise the axis exists
+     * to avoid. Each event's own sub-notes continue away from the axis as a packed chain, which is
+     * also why those `stack` edges are not drawn (see the wire layer).
+     *
+     * This is a *sequence*, not a race: the previous version reserved the ticks by padding each
+     * event by a fixed 46px, which with long labels left ~150px of empty axis between events and
+     * made the "timeline" read as scattered cards. The pitch is now the event's own width plus a
+     * small constant, so the axis looks like time passing.
+     */
     function noteLayoutTimeline(root) {
       const out = { nodes: [], edges: [], guides: [] };
       const rootBox = noteCardBox(root, 0);
-      const centre = noteCentreNode(root, rootBox.w / 2, 0);
-      out.nodes.push(centre);
+      out.nodes.push(noteCentreNode(root, rootBox.w / 2, 0));
       const kids = noteVisibleChildren(root);
-      let cursor = rootBox.w + 56;
+      let cursor = rootBox.w + NOTE_TL_GAP;
       kids.forEach((kid, index) => {
         const dir = index % 2 === 0 ? -1 : 1;
         const box = noteCardBox(kid, 1);
-        const cx = cursor + box.w / 2;
         const at = {
-          id: kid.id, depth: 1, x: cx - box.w / 2,
+          id: kid.id, depth: 1, x: cursor,
           y: dir * (NOTE_AXIS_OFF + box.h / 2) - box.h / 2, w: box.w, h: box.h,
         };
         // The event card and its sub-notes are placed by ONE call, so the card is never emitted
         // twice and its chain reserves the column it needs.
         out.edges.push({ from: root.id, to: kid.id, kind: 'none' });
-        out.guides.push({ kind: 'tick', x1: cx, y1: 0, x2: cx, y2: dir * NOTE_AXIS_OFF, dir });
+        out.guides.push({
+          kind: 'tick', x1: cursor + box.w / 2, y1: 0, x2: cursor + box.w / 2,
+          y2: dir * NOTE_AXIS_OFF, dir,
+        });
         const sub = noteAxisSubtree(kid, 1, at.x, at.y, dir);
         appendAxisSubtree(out, sub);
-        cursor += Math.max(box.w, NOTE_SUB_INDENT + sub.width) + 46;
+        cursor += chainWidth(sub, box) + NOTE_TL_GAP;
       });
       let right = 0;
       for (const node of out.nodes) right = Math.max(right, node.x + node.w);
@@ -8504,35 +8532,59 @@ window.__ModuleLoader__.load({
       return out;
     }
 
+    /** Horizontal space a packed chain needs, given the box of the node it starts from. */
+    function chainWidth(sub, box) {
+      return Math.max(box.w, NOTE_SUB_INDENT + (sub ? sub.width : 0));
+    }
+
     /**
-     * 鱼骨图: the spine runs left→right into the head (the centre), causes hang off it at 45°.
+     * The fishbone's spine runs low and its head sits at the right end; causes branch **up** off
+     * the spine and then bend up-left at a true 45°, which is the "bone" the name promises.
      *
-     * A rib is always a straight line whatever the wire style says — a curved rib is not a rib —
-     * which is why this structure ignores the branch choice and why the rib is a guide rather
-     * than an edge: the bone belongs to the drawing, not to the parent/child relation.
+     * Each cause's own sub-causes are placed by {@link noteAxisSubtree} and then lifted so that
+     * **every cause card sits on one baseline**. That is what keeps neighbours apart: a cause at
+     * even index grows upward from the line and its odd neighbour grows downward, so a deep chain
+     * at 45° runs *away* from the cause next door instead of into it. An earlier version indented
+     * sub-causes to the right, which walked each chain straight into its neighbour.
      */
     function noteLayoutFish(root) {
       const out = { nodes: [], edges: [], guides: [] };
+      const box = noteCardBox(root, 0);
       const kids = noteVisibleChildren(root);
-      const step = 190;
-      const spineEnd = Math.max(320, (kids.length + 0.7) * step);
-      const head = noteCentreNode(root, spineEnd + 26 + noteCardBox(root, 0).w / 2, 0);
+      const step = 150;
+      // The spine always leaves room for at least two causes, so a single cause still reads as a
+      // rib on a spine rather than a line with a card at the end.
+      const spineLen = Math.max(300, (kids.length + 0.4) * step);
+      const rise = NOTE_RIB;
+      const head = noteCentreNode(root, spineLen + rise + box.w / 2, 0);
+      head.y = -head.h / 2;
       out.nodes.push(head);
-      out.guides.push({ kind: 'spine', x1: 0, y1: 0, x2: spineEnd, y2: 0 });
+      out.guides.push({ kind: 'spine', x1: 0, y1: 0, x2: spineLen + rise, y2: 0 });
+
       kids.forEach((kid, index) => {
         const dir = index % 2 === 0 ? -1 : 1;
-        const box = noteCardBox(kid, 1);
-        const attach = spineEnd - (index + 1) * step;
-        const cx = attach - NOTE_RIB;
-        const centreY = dir * (NOTE_RIB + box.h / 2);
-        const at = { id: kid.id, depth: 1, x: cx - box.w / 2, y: centreY - box.h / 2, w: box.w, h: box.h };
-        out.edges.push({ from: root.id, to: kid.id, kind: 'rib', side: dir < 0 ? 'a' : 'b' });
-        // The bone ends on the near edge of the card: 96 across and 96 up from the spine, so a
-        // rib is always exactly 45° regardless of how tall the cause's own card is.
-        out.guides.push({ kind: 'rib', x1: attach, y1: 0, x2: cx, y2: centreY - (dir * box.h) / 2, dir });
-        // The cause and its spurs are placed by one call (see noteAxisSubtree), so the card is
-        // emitted exactly once and its chain reserves the room it needs.
-        appendAxisSubtree(out, noteAxisSubtree(kid, 1, at.x, at.y, dir));
+        const kidBox = noteCardBox(kid, 1);
+        const attach = spineLen - index * step;
+        // One straight bone from the spine to the card's near corner: `vdist` is both the vertical
+        // drop to that corner and the 45° leg's horizontal length. Drawing it as a single barb —
+        // rather than a stub plus a segment — is what keeps |dx| === |dy| for every card height.
+        const vdist = rise + kidBox.h / 2;
+        const cornerY = dir < 0 ? -vdist : vdist;
+        const cornerX = attach - vdist;
+        // The card sits with its near corner on the barb's end: an upper cause's bottom-LEFT corner,
+        // a lower cause's top-left corner.
+        const primeX = cornerX - kidBox.w;
+        const sub = noteAxisSubtree(kid, 1, 0, 0, dir);
+        const prime = sub.nodes.find((node) => node.depth === 1) || sub.nodes[0];
+        const dx = primeX - prime.x;
+        const dy = cornerY - prime.y;
+        // Place the whole chain shifted, then append through the helper so its `stack` edges are
+        // dropped exactly as they are on the timeline (see appendAxisSubtree).
+        appendAxisSubtree(out, {
+          nodes: sub.nodes.map((node) => Object.assign({}, node, { x: node.x + dx, y: node.y + dy })),
+          edges: sub.edges,
+        });
+        out.guides.push({ kind: 'rib', x1: attach, y1: 0, x2: cornerX, y2: cornerY, dir });
       });
       return out;
     }
@@ -10181,6 +10233,11 @@ window.__ModuleLoader__.load({
                     })),
                     layout.edges.map((edge) => {
                       if (edge.kind === 'none') return null;
+                      // 时间轴 / 鱼骨图 的 sub-note 连线**不画**。这两种结构的层与层之间的距离是
+                      // 刻意压紧的（子节点就贴在自己那根轴/骨旁边），再补一条从父卡片中心出发的
+                      // 长曲线，只会横穿整张图 —— 那正是「线跑到节点里去了」的来源。它们的层级由
+                      // 自己的轴 / 骨（guides）表达，这是刻意的、也是这两种图该有的样子。
+                      if (edge.kind === 'stack') return null;
                       // 两端都过 rectOf：拖动中的那一枝连线跟着一起动，不会脱开卡片。
                       return h('path', {
                         key: edge.from + '>' + edge.to, className: 'wsb-noteWire',

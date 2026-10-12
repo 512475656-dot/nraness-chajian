@@ -3166,10 +3166,10 @@ async function main() {
     const source = noteSource();
     const names = ['noteVisibleChildren', 'noteCardBox', 'noteSpanV', 'noteSpanH', 'noteLevels',
       'placeBranch', 'noteCentreNode', 'noteLayoutMind', 'noteLayoutLogic', 'noteLayoutTree',
-      'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'noteLayoutTimeline', 'noteLayoutFish',
-      'noteFinish', 'noteLayoutFor', 'noteWireD', 'walkNotes'];
+      'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'chainWidth', 'noteLayoutTimeline',
+      'noteLayoutFish', 'noteFinish', 'noteLayoutFor', 'noteWireD', 'walkNotes'];
     const consts = ['NOTE_GAP_X', 'NOTE_GAP_Y', 'NOTE_GAP_L', 'NOTE_GAP_ROW', 'NOTE_AXIS_OFF', 'NOTE_RIB',
-      'NOTE_SUB_INDENT', 'NOTE_PAD'];
+      'NOTE_SUB_INDENT', 'NOTE_TL_GAP', 'NOTE_PAD'];
     const values = consts.map((name) => {
       const hit = new RegExp('const ' + name + ' = (-?[\\d.]+)').exec(source);
       if (!hit) throw new Error('the constant ' + name + ' is gone from client.js');
@@ -3335,6 +3335,45 @@ async function main() {
     }
     // The head (the centre) sits at the right end of the spine.
     if (boxOf(fish, 'r').x <= Math.max(...ribs.map((rib) => rib.x2))) throw new Error('鱼骨图 put the head before the bones');
+    // 每根骨头的末端必须**落在一张卡片的近角上**。曾经这里的 y 差算错了一倍（把卡片高度算了两次），
+    // 结果上面那三根骨头变成水平线或 2:1 的斜线 —— 45° 断言能过、但看起来根本不是鱼骨。
+    for (const rib of ribs) {
+      const landing = fish.nodes.filter((node) => Math.abs(node.y - rib.y2) < 0.5
+        || Math.abs(node.y + node.h - rib.y2) < 0.5);
+      if (!landing.length) {
+        throw new Error('鱼骨图 有一根骨头悬空：没有卡片的边落在 y=' + rib.y2 + ' 上');
+      }
+      if (!landing.some((node) => Math.abs(node.x + node.w - rib.x2) < 0.5 || Math.abs(node.x - rib.x2) < 0.5)) {
+        throw new Error('鱼骨图 的骨头没有接到卡片角上（x=' + rib.x2 + '）');
+      }
+    }
+  });
+
+  check('时间轴 / 鱼骨图 不会把连线画进卡片里', () => {
+    // 「线跑到节点里面去了」是一条真实反馈。根因不是透明度，是这两种结构**自己画了轴与骨**，
+    // 却又为每一层补了一条从父卡片中心出发的长曲线；那些曲线横穿整张图、也从卡片底下穿过。
+    // 现在布局层就不再产出这些边，渲染层另有一道 `stack` 守卫兜底。
+    const g = noteGeometry;
+    const source = noteSource();
+    const tree = noteFixture();
+    for (const kind of ['timeline', 'fish']) {
+      const laid = g.noteLayoutFor(kind, tree);
+      for (const edge of laid.edges) {
+        if (edge.kind === 'stack') {
+          throw new Error(kind + ' 仍然产出会被画出来的 stack 连线（' + edge.from + '>' + edge.to + '）');
+        }
+      }
+      // 卡片本身必须还在：丢掉连线不等于丢掉节点。
+      const expected = ['r', 'a', 'a1', 'a2', 'b', 'c', 'c1', 'c2', 'd'];
+      const placed = laid.nodes.map((node) => node.id).sort().join(',');
+      if (placed !== expected.slice().sort().join(',')) {
+        throw new Error(kind + ' 丢掉了节点：' + placed);
+      }
+    }
+    // 渲染层的守卫必须也还在 —— 只改布局不改渲染，别的结构一改成 stack 就会立刻复现。
+    if (!/edge\.kind === 'stack'\)\s*return null/.test(source)) {
+      throw new Error('连线渲染层没有跳过 stack 边，长曲线还是会横穿卡片');
+    }
   });
 
   check('a picture changes the card box, and the three wire styles differ', () => {
