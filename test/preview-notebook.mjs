@@ -362,6 +362,15 @@ tree = render(mainEntry.component, {});
 
 //#endregion
 
+//#region open the 文件 menu for the screenshot (--file)
+if (args.includes('--file')) {
+  const btn = flatten(tree).find((node) => node.props && node.props['data-note-file'] === '1');
+  if (!btn) throw new Error('no 文件 button');
+  btn.props.onClick({ stopPropagation() {}, preventDefault() {} });
+  tree = render(mainEntry.component, {});
+}
+//#endregion
+
 //#region element tree -> html
 
 const HTML_ATTRS = ['x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'points', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'viewBox', 'opacity', 'title', 'href', 'src', 'alt', 'role', 'value', 'placeholder', 'type', 'min', 'max', 'step', 'disabled', 'aria-label', 'loading', 'target', 'rel'];

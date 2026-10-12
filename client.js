@@ -1077,7 +1077,10 @@ window.__ModuleLoader__.load({
    （这段 CSS 会被拼进一个 JS 模板字符串，所以这里不能出现反引号。） */
 .wsb-screen[data-role="notes"] .wsb-root{background:transparent}
 .wsb-noteRoot{outline:none;padding:calc(var(--dsh-frame-top-clearance,0px) + 12px) 14px 12px;gap:10px}
-.wsb-noteTop{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:0}
+/* 顶栏的层级必须高于下面的舞台：顶栏和 .wsb-noteStage 原先都是 z-index:1，DOM 靠后的舞台
+   于是画在顶栏之上，顶栏里弹出的「文件」菜单被舞台切掉一截（菜单的 z-index 只在顶栏自己的
+   层叠上下文里比较，比不过整块舞台）。 */
+.wsb-noteTop{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:0;z-index:3}
 .wsb-noteTopRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .wsb-noteTopSpacer{flex:1 1 auto;min-width:8px}
 .wsb-noteGroup{display:flex;align-items:center;gap:6px;min-width:0;position:relative}
@@ -1093,22 +1096,34 @@ window.__ModuleLoader__.load({
 .wsb-noteZoomLabel{min-width:46px;text-align:center;font-size:11px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums}
 
-/* ---- 文件: 保存 / 打开 / 导出 ---- */
-.wsb-noteFileRow{display:inline-flex;align-items:center;gap:4px}
-.wsb-noteExportMenu{position:absolute;top:calc(100% + 6px);left:0;z-index:6;min-width:250px;
+/* ---- 文件: 一个按钮打开「新建 / 保存 / 打开 / 导出」 ------------------------------------------
+   四个并排按钮加一个独立导出下拉，把顶栏撑得很长；它们本来就是同一类动作（对整张图做的事），
+   收进一个菜单既是更短的顶栏，也是更清楚的归类。 */
+/* 菜单从按钮下方 14px 开始，而不是贴着它：贴着的时候菜单顶边会压在工具栏那一行上，
+   那一行的按钮文字就从第一项里透出来（量过：菜单首项 272px、工具栏行底 271px，正好差 1px）。 */
+.wsb-noteExportMenu{position:absolute;top:calc(100% + 14px);left:0;z-index:6;min-width:250px;
+  max-height:calc(100vh - 160px);overflow:auto;
   display:flex;flex-direction:column;gap:2px;padding:6px;border-radius:14px;
-  background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 88%,transparent);
+  /* **完全不透明**的面板。不能只写 var(--dsw-alias-bg-overlay)：宿主的这几个 alias 本身就带
+     透明度，于是「设了背景」的菜单仍然是透的，背后工具栏的文字会从第一项里渗出来（截图里看
+     得到）。所以是把 overlay 混到**不透明的画布底色**上 —— 得到的是一枚实心面板，色调仍然
+     来自宿主。 */
+  background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 88%,var(--dsw-alias-bg-base));
   -webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%);
-  border:1px solid var(--dsw-alias-border-l1);
-  box-shadow:0 22px 44px -20px rgba(0,0,0,.6);
+  border:1px solid var(--dsw-alias-border-l2);
+  box-shadow:0 22px 44px -20px rgba(0,0,0,.7);
   animation:wsb-noteMenuIn .16s cubic-bezier(.2,.8,.2,1) both}
 @keyframes wsb-noteMenuIn{from{opacity:0;translate:0 -4px}to{opacity:1;translate:0}}
+/* 文件菜单比导出菜单宽一点：它现在还要放下「清空画布，用这个名字新建一张图」这类整句说明。 */
+.wsb-noteFileMenu{min-width:290px;left:auto;right:0}
 .wsb-noteExportItem{display:flex;flex-direction:column;gap:1px;align-items:flex-start;text-align:left;
   appearance:none;border:0;cursor:pointer;font:inherit;padding:7px 9px;border-radius:9px;
   background:transparent;color:var(--dsw-alias-label-primary)}
 .wsb-noteExportItem:hover{background:color-mix(in srgb,var(--wsb-c1) 18%,transparent)}
 .wsb-noteExportItem>b{font-size:12px;font-weight:640}
 .wsb-noteExportItem>span{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+.wsb-noteFileBtn[data-on="true"]{background:color-mix(in srgb,var(--wsb-c1) 20%,transparent);
+  border-color:color-mix(in srgb,var(--wsb-c1) 38%,transparent)}
 
 /* The stage: outline | canvas | inspector. Either rail can go away, and the grid is told which
    one did — the canvas then takes the whole window instead of leaving a gap where a rail was. */
@@ -3948,8 +3963,20 @@ window.__ModuleLoader__.load({
        untouched by `normalizeNoteNode` instead of being deleted. Retiring a feature is not the
        same as destroying somebody's drawing, so the data stays and only the renderer changed. */
 
-    /** The six structures the toolbar offers, in the order it shows them. */
-    const NOTE_LAYOUTS = ['mind', 'logic', 'org', 'tree', 'timeline', 'fish'];
+    /**
+     * The structures the toolbar offers, in the order it shows them.
+     *
+     * 时间轴 and 鱼骨图 were removed from the toolbar. Their geometry was fixed twice and both
+     * times it ended up correct-but-not-wanted: a timeline and a fishbone are *presentations* of a
+     * sequence, and this is a free-form map where the tree is whatever the reader drew. Keeping two
+     * buttons that place cards in ways the reader did not ask for was worse than not offering them.
+     *
+     * Their layout functions (`noteLayoutTimeline` / `noteLayoutFish`) and the four strings they
+     * needed are deliberately still here: a note saved while they were selectable still carries
+     * `noteStyle.layout = 'timeline'`, and `noteStyleOf` falls back to 思维导图 for anything not in
+     * this list — so an old note opens as a mind map instead of failing to render.
+     */
+    const NOTE_LAYOUTS = ['mind', 'logic', 'org', 'tree'];
     /** Wire styles. `curve` is the mind-map default; the other two are for engineering diagrams. */
     const NOTE_BRANCHES = ['curve', 'elbow', 'line'];
     /** Node shapes the inspector offers ('' = follow the theme's own default). */
@@ -9065,19 +9092,11 @@ window.__ModuleLoader__.load({
      * holds pictures, and when it was made. Delete is on the context menu (右键) rather than a
      * hover button, so a stray click cannot destroy a note.
      */
-    function NoteHistory({ t, docs, activeId, onOpen, onDelete, onCreate, onExport }) {
+    function NoteHistory({ t, docs, activeId, onOpen, onDelete }) {
       const [menu, setMenu] = useState(null);
-      const [naming, setNaming] = useState(false);
-      const [draft, setDraft] = useState('');
       const [notice, setNotice] = useState('');
 
       const rows = docs.slice().sort((left, right) => right.created - left.created);
-      const commitName = () => {
-        const name = draft.trim();
-        setNaming(false);
-        setDraft('');
-        onCreate(name);
-      };
       const askDelete = (doc) => {
         if (docs.length <= 1) {
           setNotice(t.noteNoteLastOne);
@@ -9092,29 +9111,6 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'wsb-glass wsb-noteRail wsb-noteHistory', 'data-note-history': '1' },
         h(PaneHead, { title: t.noteHistory, sub: docs.length + '' }),
         h('div', { className: 'wsb-body' },
-          h('button', {
-            type: 'button', className: 'wsb-btn wsb-noteNewNote', 'data-note-new-note': '1',
-            title: t.noteNewHint, onClick: () => { setNaming(true); setDraft('') },
-          }, '+ ' + t.noteNewNote),
-          naming
-            ? h('div', { className: 'wsb-noteNameRow' },
-              h('input', {
-                className: 'wsb-input', 'data-note-name-input': '1', value: draft,
-                placeholder: t.noteNoteUntitled, 'aria-label': t.noteNewNote, autoFocus: true,
-                onChange: (event) => setDraft(event.target.value),
-                onKeyDown: (event) => {
-                  if (event.key === 'Enter') { event.preventDefault(); commitName() }
-                  if (event.key === 'Escape') { event.preventDefault(); setNaming(false); setDraft('') }
-                },
-              }),
-              h('button', {
-                type: 'button', className: 'wsb-btn', 'data-note-name-ok': '1', onClick: commitName,
-              }, t.noteAdd),
-              h('button', {
-                type: 'button', className: 'wsb-btn', 'data-note-name-cancel': '1',
-                onClick: () => { setNaming(false); setDraft('') },
-              }, t.cancel))
-            : null,
           h('div', { className: 'wsb-noteRows wsb-noteDocRows', 'data-note-doc-rows': '1' },
             rows.length
               ? rows.map((doc, index) => {
@@ -9141,12 +9137,10 @@ window.__ModuleLoader__.load({
               })
               : h('div', { className: 'wsb-noteEmptyMini' }, t.noteHistoryEmpty)),
           notice ? h('div', { className: 'wsb-noteNotice', 'data-note-notice': '1' }, notice) : null,
+          // 这里原本还有一个「文件」小链接指向导出菜单。文件动作已经收进顶栏那一个「文件」按钮，
+          // 所以这条只是同一件事的第二个入口 —— 去掉，rail 底部只留一句状态。
           h('div', { className: 'wsb-noteHistFoot' },
-            h('span', null, t.noteNoteSaved),
-            h('button', {
-              type: 'button', className: 'wsb-noteLinkBtn', 'data-note-history-export': '1',
-              onClick: onExport,
-            }, t.noteFile))),
+            h('span', null, t.noteNoteSaved))),
         menu
           ? h('div', {
             className: 'wsb-noteMenu', 'data-note-doc-menu': menu.id,
@@ -9188,7 +9182,7 @@ window.__ModuleLoader__.load({
       const [ready, setReady] = useState(view0.fitted);
       const [liveDrag, setLiveDrag] = useState(null);
       const [hot, setHot] = useState('');
-      const [exportOpen, setExportOpen] = useState(false);
+      const [fileOpen, setFileOpen] = useState(false);
       const [fileStatus, setFileStatus] = useState('');
       // 右键菜单（画布 / 节点）、「新建图表」对话框、以及拖动 + 时的临时连线。
       const [menu, setMenu] = useState(null);
@@ -9651,7 +9645,7 @@ window.__ModuleLoader__.load({
         if (key === 'Enter') { event.preventDefault(); addSibling(selectedId); return }
         if (key === 'F2') { event.preventDefault(); startEdit(selectedId); return }
         if (key === 'Delete' || key === 'Backspace') { event.preventDefault(); removeNode(selectedId); return }
-        if (key === 'Escape') { setEditingId(null); setExportOpen(false); return }
+        if (key === 'Escape') { setEditingId(null); setFileOpen(false); return }
         if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
           event.preventDefault();
           moveSelection(key);
@@ -9660,7 +9654,7 @@ window.__ModuleLoader__.load({
 
       const onCanvasPointerDown = (event) => {
         setEditingId(null);
-        setExportOpen(false);
+        setFileOpen(false);
         setMenu(null);
         gestureRef.current = { kind: 'pan', x: event.clientX, y: event.clientY, vx: pan.x, vy: pan.y };
         safe(() => canvasRef.current.setPointerCapture(event.pointerId));
@@ -9671,7 +9665,7 @@ window.__ModuleLoader__.load({
         if (event.button === 1) return;   // the middle button always pans
         event.stopPropagation();
         setSelectedId(note.id);
-        setExportOpen(false);
+        setFileOpen(false);
         // 拖一枝就是拖一整枝：只动自己会让子节点留在原地、连线被拉成长丝。
         const ids = [];
         noteWalkVisible(note, (item) => ids.push(item.id));
@@ -9809,7 +9803,7 @@ window.__ModuleLoader__.load({
       }, [root]);
 
       const exportAs = useCallback((format) => {
-        setExportOpen(false);
+        setFileOpen(false);
         const title = module.name || t.kindNotebook;
         if (format === 'native') {
           collectImages().then(({ images, missing }) => {
@@ -10017,7 +10011,7 @@ window.__ModuleLoader__.load({
         const width = rect ? rect.width : 520;
         const height = rect ? rect.height : 380;
         setEditingId(null);
-        setExportOpen(false);
+        setFileOpen(false);
         setSelectedId(id);
         setMenu({
           kind, id, world: worldPoint(event.clientX, event.clientY),
@@ -10148,24 +10142,48 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'wsb-noteSwatches', 'data-note-themes': '1' },
                   Object.keys(NOTE_THEMES).map(themeButton))),
               h('div', { className: 'wsb-noteGroup wsb-noteFileGroup' },
-                h('b', null, t.noteFile),
-                h('div', { className: 'wsb-noteFileRow' },
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-newmap': '1', title: t.noteNewHint, onClick: () => { setNewOpen(true); setNewName(blank ? '' : root.title) } }, t.noteNew),
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-save': '1', title: t.noteSaveHint, onClick: () => exportAs('native') }, t.noteSave),
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-open': '1', title: t.noteOpenHint, onClick: () => safe(() => importRef.current && importRef.current.click()) }, t.noteOpen),
-                  h('button', {
-                    type: 'button', className: 'wsb-btn', 'data-note-export': '1',
-                    'data-on': exportOpen ? 'true' : 'false', title: t.noteExportHint,
-                    onClick: () => setExportOpen((open) => !open),
-                  }, t.noteExport + ' ▾')),
-                exportOpen
-                  ? h('div', { className: 'wsb-noteExportMenu', 'data-note-export-menu': '1' },
+                // 一个「文件」按钮承载全部文件动作：新建 / 保存 / 打开 / 导出。
+                // 之前这四个是并排的四个按钮，外加一个独立的导出下拉 —— 顶栏被撑得很长，而
+                // 它们本来就是同一类动作（都是"对整张图做的事"），合成一个入口更清楚。
+                h('button', {
+                  type: 'button', className: 'wsb-btn wsb-noteFileBtn',
+                  'data-note-file': '1', 'data-on': fileOpen ? 'true' : 'false',
+                  title: t.noteFile, onClick: () => setFileOpen((open) => !open),
+                }, t.noteFile + ' ▾'),
+                fileOpen
+                  ? h('div', { className: 'wsb-noteExportMenu wsb-noteFileMenu', 'data-note-file-menu': '1' },
+                    h('button', {
+                      type: 'button', className: 'wsb-noteExportItem', 'data-note-newmap': '1',
+                      // 新建 = **加一篇新笔记**，不是清空当前这篇。旧版本这里调 createMap，它会
+                      // 把当前那张图清空重来 —— 那在单图时代说得通，现在模块下可以有很多篇，
+                      // 「新建」这个词只能指向"多一篇"。
+                      onClick: () => { setFileOpen(false); createNote('') },
+                    },
+                      h('b', null, t.noteNew),
+                      h('span', null, t.noteNewHint)),
+                    h('button', {
+                      type: 'button', className: 'wsb-noteExportItem', 'data-note-save': '1',
+                      onClick: () => { setFileOpen(false); exportAs('native') },
+                    },
+                      h('b', null, t.noteSave),
+                      h('span', null, t.noteSaveHint)),
+                    h('button', {
+                      type: 'button', className: 'wsb-noteExportItem', 'data-note-open': '1',
+                      onClick: () => { setFileOpen(false); safe(() => importRef.current && importRef.current.click()) },
+                    },
+                      h('b', null, t.noteOpen),
+                      h('span', null, t.noteOpenHint)),
+                    h('div', { className: 'wsb-noteMenuSep' }),
                     exportItems.map(([id, label, hint]) => h('button', {
                       key: id, type: 'button', className: 'wsb-noteExportItem',
-                      'data-note-export-format': id, onClick: () => exportAs(id),
+                      'data-note-export-format': id, onClick: () => { setFileOpen(false); exportAs(id) },
                     },
                       h('b', null, label),
                       h('span', null, hint))))
+                  : null,
+                // 点别处关掉菜单。菜单本身把它盖住，所以这条不会拦住菜单里的点击。
+                fileOpen
+                  ? h('div', { className: 'wsb-noteMenuMask', 'data-note-file-mask': '1', onClick: () => setFileOpen(false) })
                   : null),
               h('div', { className: 'wsb-noteTopSpacer' }),
               h('div', { className: 'wsb-noteGroup' },
@@ -10182,8 +10200,7 @@ window.__ModuleLoader__.load({
           },
             outline
               ? h(NoteHistory, {
-                t, docs, activeId, onOpen: openNote, onDelete: removeNote, onCreate: createNote,
-                onExport: () => setExportOpen(true),
+                t, docs, activeId, onOpen: openNote, onDelete: removeNote,
               })
               : null,
             h('div', { className: 'wsb-noteCanvasWrap' },

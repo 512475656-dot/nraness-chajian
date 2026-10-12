@@ -3436,20 +3436,10 @@ async function main() {
     const canvasEl = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
     const plus = view.elements.find((element) => element.props['data-note-card-add'] === id);
     if (!plus) {
-      const all = runtime.sink.elements;
-      const cards = all
+      const cards = runtime.sink.elements
         .filter((element) => element.props['data-note-card'] !== undefined)
         .map((element) => element.props['data-note-card']);
-      const probe = {
-        noteRoot: noteTreeStored() && noteTreeStored().id,
-        activeNoteId: noteModule().activeNoteId,
-        docs: (noteDocsStored() || []).map((doc) => [doc.id, doc.root.id, doc.root.title]),
-        blank: all.some((element) => element.props['data-note-blank'] !== undefined),
-        noWorld: !all.some((element) => element.props['data-note-world'] !== undefined),
-        role: all.some((element) => element.props['data-role'] === 'notes'),
-        homeCards: all.filter((element) => hasClass(element, 'wsb-card')).length,
-      };
-      throw new Error('no + button on card ' + id + '; probe=' + JSON.stringify(probe));
+      throw new Error('no + button on card ' + id + '; cards on screen: [' + cards.join(', ') + ']');
     }
     plus.props.onPointerDown({
       button: 0, clientX: 300, clientY: 200, pointerId: 9, stopPropagation() {}, preventDefault() {},
@@ -3457,6 +3447,24 @@ async function main() {
     });
     canvasEl().props.onPointerUp();
     return commitEdit();
+  };
+
+  /**
+   * Open the 文件 menu and click one of its items.
+   *
+   * 新建 / 保存 / 打开 / 导出 used to be four buttons plus a separate export dropdown in the top
+   * bar; they are one 文件 menu now, so every test that used them has to open the menu first.
+   */
+  const fileMenu = (view) => view.elements.find((element) => element.props['data-note-file'] === '1');
+  const clickFile = (view, marker) => {
+    if (!fileMenu(view)) throw new Error('the 文件 button is gone from the top bar');
+    const opened = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-file'] === '1'));
+    if (!opened.elements.some((element) => element.props['data-note-file-menu'] !== undefined)) {
+      throw new Error('the 文件 button did not open a menu');
+    }
+    return harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props[marker] !== undefined));
   };
 
   check('左栏是笔记历史：新建会加一篇，点击会切过去', () => {
@@ -3469,31 +3477,29 @@ async function main() {
     // 还没新建过，列表里应当已经有一篇（迁移出来的那一篇）
     const firstTitle = noteTreeStored().title;
     if (!firstTitle) throw new Error('the fixture has no centre title to migrate');
-    // 新建第二篇。**注意**：`view` 是一次渲染的快照，不是活的引用 —— 输入框的值必须在
-    // 打字之后再从 runtime 取一次，否则读到的是打字前的旧元素。
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-new-note'] === '1'));
-    const field = () => runtime.sink.elements.find((element) => element.props['data-note-name-input'] === '1');
-    if (!field()) throw new Error('新建笔记 did not offer a name field');
-    field().props.onChange({ target: { value: '第二篇' } });
-    harness.flush(runtime);
-    if (field().props.value !== '第二篇') {
-      throw new Error('the name field did not keep what was typed: ' + JSON.stringify(field().props.value));
-    }
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-name-ok'] === '1'));
+    // 新建第二篇。**注意**：`view` 是一次渲染的快照，不是活的引用 —— 每一段断言都要用
+    // `runtime.sink.elements` 重新取，否则读到的是上一帧的元素。
+    view = clickFile(view, 'data-note-newmap');
+    // 菜单里的「新建」直接加一篇（不弹命名框）—— 它的名字来自自己的中心节点，改中心节点即改名。
     const docs = noteDocsStored();
-    if (!docs || docs.length !== 2) throw new Error('新建笔记 did not add a note, saw ' + (docs ? docs.length : 'none'));
+    if (!docs || docs.length !== 2) throw new Error('新建 did not add a note, saw ' + (docs ? docs.length : 'none'));
     if (noteModule().activeNoteId !== docs[1].id) throw new Error('the new note was not opened');
-    if (noteTreeStored().title !== '第二篇') {
-      throw new Error('the canvas did not switch to the new note');
+    // 新笔记的中心节点是空的，所以它**不是**第一篇那棵树 —— 这就是"画布切过去了"的证据。
+    if (noteTreeStored().title !== '') {
+      throw new Error('the canvas did not switch to the new (empty) note: ' + JSON.stringify(noteTreeStored().title));
     }
+    if (noteTreeStored().id === docs[0].root.id) throw new Error('the new note reused the old root');
     if (docRows().length !== 2) throw new Error('the history rail lists ' + docRows().length + ' of 2 notes');
     // 历史里两篇都点得到，且当前那篇被标出来
     const openRows = view.elements.filter((element) => element.props['data-note-doc'] !== undefined
       && element.props['data-open'] === 'true');
     if (openRows.length !== 1) throw new Error('exactly one note should be marked open, saw ' + openRows.length);
     if (openRows[0].props['data-note-doc'] !== docs[1].id) throw new Error('the wrong note is marked open');
+    // 未命名的笔记在列表里要有一个可读的占位名，而不是空串。
+    const firstName = view.elements.filter((element) => element.props['data-note-doc-name'] === docs[1].id);
+    if (!firstName.length || !JSON.stringify(firstName[0].children).match(/未命名/)) {
+      throw new Error('an unnamed note has no readable label in the history');
+    }
     // 点回第一篇：树要换回原来那棵
     view = harness.dispatch(runtime, () => harness.click(runtime,
       (element) => element.props['data-note-doc'] === docs[0].id));
@@ -3504,15 +3510,12 @@ async function main() {
     // 两棵树都必须还在（切换不能把另一篇的内容覆盖掉）
     const after = noteDocsStored();
     if (after.length !== 2) throw new Error('switching lost a note');
-    if (after[1].root.title !== '第二篇') throw new Error('the second note lost its own content');
+    if (after[1].root.id !== docs[1].root.id) throw new Error('the second note lost its own tree');
   });
 
   check('右键可以删除一篇笔记，但最后一篇删不掉', () => {
     let view = openNotebook(noteFixture());
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-new-note'] === '1'));
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-name-ok'] === '1'));
+    view = clickFile(view, 'data-note-newmap');
     let docs = noteDocsStored();
     if (docs.length !== 2) throw new Error('setup failed: expected 2 notes');
 
@@ -3551,10 +3554,7 @@ async function main() {
     const firstKids = noteTreeStored().children.length;
 
     // 第二篇：新建 + 加一个自己的子节点
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-new-note'] === '1'));
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-name-ok'] === '1'));
+    view = clickFile(view, 'data-note-newmap');
     view = addChildViaCard(view, noteTreeStored().id);
     const secondId = noteModule().activeNoteId;
 
@@ -3601,10 +3601,10 @@ async function main() {
       if (on.length !== 1) throw new Error(key + ' has ' + on.length + ' selected choices');
       return on[0].props[key];
     };
-    if (group('data-note-layout', 6) !== 'mind') throw new Error('a fresh map is not a 思维导图');
+    if (group('data-note-layout', 4) !== 'mind') throw new Error('a fresh map is not a 思维导图');
     group('data-note-branch', 3);
     group('data-note-theme', 4);
-    // The map itself: cards, wires and the outline that mirrors them.
+    // The map itself: cards, wires and the note history beside them.
     for (const id of ['r', 'a', 'b', 'c', 'd']) {
       if (!noteCardEl(view, id)) throw new Error('no card rendered for ' + id);
     }
@@ -3619,8 +3619,21 @@ async function main() {
     if (!view.elements.some((element) => element.props['data-note-doc-rows'] !== undefined)) {
       throw new Error('the note-history rail lists no notes');
     }
-    if (!view.elements.some((element) => element.props['data-note-new-note'] === '1')) {
-      throw new Error('the note-history rail cannot create a note');
+    // 新建笔记的入口现在在顶栏那一个「文件」按钮里（见 clickFile），左栏不再有自己的按钮。
+    // 这里只确认菜单里有这一项，不为它建东西 —— 建立与切换由下面三条专门的用例覆盖。
+    if (!fileMenu(view)) throw new Error('the top bar has no 文件 button');
+    const fileMenuOpen = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-file'] === '1'));
+    if (!fileMenuOpen.elements.some((element) => element.props['data-note-newmap'] !== undefined)) {
+      throw new Error('the 文件 menu does not offer 新建');
+    }
+    for (const marker of ['data-note-save', 'data-note-open']) {
+      if (!fileMenuOpen.elements.some((element) => element.props[marker] !== undefined)) {
+        throw new Error('the 文件 menu does not offer ' + marker);
+      }
+    }
+    if (!fileMenuOpen.elements.some((element) => element.props['data-note-export-format'] !== undefined)) {
+      throw new Error('the 文件 menu does not offer any export format');
     }
     // The inspector offers every edit the window claims to support.
     for (const marker of ['data-note-title-input', 'data-note-body-input', 'data-note-image',
@@ -3806,12 +3819,18 @@ async function main() {
     view = commitEdit();
 
     // ---- 4. 新建并命名：整张图换成那个名字的中心节点，而且能撤销 ----
+    // 顶栏那个「文件 → 新建」加的是**一篇新笔记**；而"清空当前这张图、用新名字重来"仍然在
+    // 画布右键菜单里（那个动词现在只属于这里）。这一段测的是后者，所以走右键。
     const before = noteTreeStored().children.length;
+    harness.dispatch(runtime, () => canvas().props.onContextMenu({
+      preventDefault() {}, stopPropagation() {}, clientX: 40, clientY: 40,
+    }));
+    view = harness.flush(runtime);
     harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-newmap'] !== undefined));
+      (element) => element.props['data-note-menu-item'] === 'new'));
     view = harness.flush(runtime);
     if (!view.elements.some((element) => element.props['data-note-new-box'] !== undefined)) {
-      throw new Error('点了「新建」没有出现命名框');
+      throw new Error('右键里的「新建」没有出现命名框');
     }
     view.elements.find((element) => element.props['data-note-new-name'] !== undefined)
       .props.onChange({ target: { value: '第二张图' } });
@@ -4278,12 +4297,19 @@ async function main() {
     // 图片加载也走 createObjectURL，所以按「是不是 Blob、类型对不对」挑，而不是数个数。
     const blobOf = (type) => exports_.blobs.filter((value) => value && typeof value.text === 'function'
       && (!type || value.type === type)).pop();
-    // 导出菜单：五个格式都列出来，点一个就走一次下载。
-    view = harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-export'] !== undefined));
+    // 文件菜单：新建 / 保存 / 打开 + 五个导出格式，全在同一个菜单里。
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-file'] === '1'));
     const menu = view.elements.filter((element) => element.props['data-note-export-format'] !== undefined);
-    if (menu.length !== 5) throw new Error('导出菜单有 ' + menu.length + ' 项，应该是 5');
-    const setOn = view.elements.find((element) => element.props['data-note-export'] !== undefined);
-    if (setOn.props['data-on'] !== 'true') throw new Error('导出按钮没有显示菜单已打开');
+    if (menu.length !== 5) throw new Error('文件菜单里的导出一共有 ' + menu.length + ' 项，应该是 5');
+    const setOn = view.elements.find((element) => element.props['data-note-file'] === '1');
+    if (setOn.props['data-on'] !== 'true') throw new Error('文件按钮没有显示菜单已打开');
+    // 四个文件动作必须都在同一个菜单里 —— 这一条正是"把黄框整合进一个按钮"的要求。
+    for (const marker of ['data-note-newmap', 'data-note-save', 'data-note-open']) {
+      if (!view.elements.some((element) => element.props[marker] !== undefined)) {
+        throw new Error('文件菜单里没有 ' + marker);
+      }
+    }
 
     exports_.blobs.length = 0;
     view = harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-export-format'] === 'mm'));
@@ -4297,14 +4323,13 @@ async function main() {
       throw new Error('导出之后没有给出一句状态');
     }
     // 菜单在导出之后自己收起来。
-    if (runtime.sink.elements.some((element) => element.props['data-note-export-menu'] !== undefined)) {
-      throw new Error('导出之后菜单还开着');
+    if (runtime.sink.elements.some((element) => element.props['data-note-file-menu'] !== undefined)) {
+      throw new Error('导出之后文件菜单还开着');
     }
 
     // 保存：原生 JSON，图片以 data URL 写进文件（FileReader 由 harness 打桩）。
     exports_.blobs.length = 0;
-    runtime.sink.elements.find((element) => element.props['data-note-save'] !== undefined)
-      .props.onClick({ stopPropagation() {}, preventDefault() {} });
+    view = clickFile(view, 'data-note-save');
     for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => { setTimeout(resolve, 4) });
     view = harness.flush(runtime);
     const jsonBlob = blobOf('application/json');
