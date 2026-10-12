@@ -6404,6 +6404,16 @@ async function main() {
     const text = JSON.stringify(view.elements);
     if (text.indexOf('完整名单') < 0) throw new Error('a complete board does not say it is complete');
     if (text.indexOf('活跃榜') < 0) throw new Error('an active-slice board does not say it is a slice');
+    // 卡片小字里绝不能出现「只」：`op=markets` 不发数量，早先却插了一个数量占位符，
+    // 于是每张卡都渲染成「A股 · 只（该板块的完整名单）」—— 一个凭空出现的「只」。
+    for (const card of cards) {
+      const meta = (card.children || [])
+        .filter((child) => child && typeof child === 'object' && hasClass(child, 'wsb-stkMkMeta'))
+        .map((child) => JSON.stringify(child.children || [])).join('');
+      if (meta.indexOf('只') >= 0) {
+        throw new Error('a board card counts stocks it was never told about: ' + meta);
+      }
+    }
     // 板块视图下状态行衡量的不该是指数的「几个市场」，否则数字与画面不符。
     const status = view.elements.find((element) => element.props['data-stock-status'] === '1');
     if (status.props['data-stock-status-scope'] !== 'markets') {

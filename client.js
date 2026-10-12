@@ -2051,45 +2051,84 @@ window.__ModuleLoader__.load({
 
 /* ---- 市场板块 / 板块成分股（点进去看全部个股）----------------------------------
    板块卡片是"可点"的，所以它必须看起来像可点的东西：悬停抬头、右侧有一个明确的箭头。
-   成分股表复用上面的 .wsb-stkTable 骨架，只补它没有的列与方向色 —— 一套表格，两种内容。 */
+   成分股表复用上面的 .wsb-stkTable 骨架，只补它没有的列与方向色 —— 一套表格，两种内容。
+
+   这一版把两处"廉价感"改掉了：一是同一件事被三处重复说（已合并到一条头部），二是行太挤
+   （6px/11.5px 的密集表），所以成分股表单独放宽行高与字号。 */
 .wsb-stkMkGrid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
-.wsb-stkMkCard{position:relative;display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:14px;
+.wsb-stkMkCard{position:relative;display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:15px;
   text-align:left;cursor:pointer;appearance:none;font:inherit;color:inherit;
   border:1px solid var(--dsw-alias-border-l1);
   transition:transform .18s cubic-bezier(.2,.8,.2,1),border-color .18s ease,background .18s ease}
-.wsb-stkMkCard:hover{transform:translateY(-1.5px);border-color:var(--dsw-alias-border-l2);
-  background:color-mix(in srgb,var(--wsb-c1) 10%,transparent)}
-.wsb-stkMkMain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
-.wsb-stkMkName{font-size:13px;font-weight:640}
-.wsb-stkMkMeta{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
-.wsb-stkMkGo{flex:0 0 auto;width:16px;height:16px;color:var(--dsw-alias-label-secondary);opacity:.7}
+.wsb-stkMkCard:hover{transform:translateY(-2px);border-color:var(--dsw-alias-border-l2);
+  background:color-mix(in srgb,var(--wsb-c1) 9%,transparent)}
+.wsb-stkMkMain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}
+.wsb-stkMkName{font-size:13.5px;font-weight:620;letter-spacing:.01em}
+.wsb-stkMkMeta{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+/* 作用域标签：一个小胶囊，是"这是完整名单还是活跃榜"的唯一说明，所以它必须一直看得见 */
+.wsb-stkMkScope{display:inline-flex;align-items:center;flex:0 0 auto;font-style:normal;
+  padding:1.5px 6px;border-radius:999px;font-size:9.5px;letter-spacing:.02em;
+  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+.wsb-stkMkScope[data-scope="board"]{border-color:color-mix(in srgb,var(--wsb-c1) 42%,transparent);
+  color:color-mix(in srgb,var(--wsb-c1) 88%,transparent)}
+.wsb-stkMkGo{flex:0 0 auto;width:15px;height:15px;color:var(--dsw-alias-label-secondary);opacity:.55}
 .wsb-stkMkCard:hover .wsb-stkMkGo{opacity:1;color:var(--wsb-c1)}
 
-.wsb-stkMkBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-.wsb-stkMkWho{display:flex;flex-direction:column;gap:1px;min-width:0}
-.wsb-stkMkWho b{font-size:15px;font-weight:660}
-.wsb-stkMkCount{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
-.wsb-stkMkWho,.wsb-stkMkCount{white-space:nowrap}
-.wsb-stkMkBar .wsb-input{flex:1 1 150px;min-width:120px;max-width:260px}
-.wsb-stkMkCount{margin-left:auto;text-align:right}
-
+/* 成分股头部：一条横排承载返回 / 板块名 / 规模 / 搜索 / 刷新 */
+.wsb-stkMkHead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.wsb-stkMkBack{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;appearance:none;cursor:pointer;
+  padding:5px 10px 5px 6px;border-radius:999px;font:inherit;font-size:11.5px;
+  border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);
+  text-decoration:none;transition:color .18s ease,border-color .18s ease}
+.wsb-stkMkBack:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.wsb-stkMkBack>svg{width:13px;height:13px;flex:0 0 auto}
+.wsb-stkMkWho{display:flex;flex-direction:column;gap:2px;min-width:0;margin-right:auto}
+.wsb-stkMkWho b{font-size:16px;font-weight:660;letter-spacing:.01em;white-space:nowrap}
+.wsb-stkMkCount{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dsw-alias-label-secondary);
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.wsb-stkMkSearch{flex:0 1 220px;min-width:132px}
 .wsb-stkMkWrap{overflow:auto;max-height:100%}
-.wsb-stkTable[data-stock-members="1"] th[data-sortable="1"]{cursor:pointer;user-select:none}
+.wsb-stkMkWrap::-webkit-scrollbar{width:9px;height:9px}
+.wsb-stkMkWrap::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2);border-radius:9px;
+  border:2px solid transparent;background-clip:content-box}
+
+/* ---- 成分股表：同一套骨架，但更透气 -------------------------------------------
+   .wsb-stkTable 的 6px/11.5px 是给七列指数表调的；成分股有十列、要一行行读，所以这里
+   单独放宽。数字仍走等宽数字，表格仍然右对齐 —— 只是不再挤在一起。 */
+.wsb-stkTable[data-stock-members="1"] th,.wsb-stkTable[data-stock-members="1"] td{padding:12px 12px;font-size:12.5px}
+.wsb-stkTable[data-stock-members="1"] th{font-size:10px;letter-spacing:.04em;text-transform:none;
+  font-weight:600;color:var(--dsw-alias-label-secondary)}
+.wsb-stkTable[data-stock-members="1"] tbody tr{transition:background .15s ease}
+.wsb-stkTable[data-stock-members="1"] tbody tr:hover{background:color-mix(in srgb,var(--wsb-c1) 7%,transparent)}
+.wsb-stkTable[data-stock-members="1"] th[data-sortable="1"]{cursor:pointer;user-select:none;white-space:nowrap}
 .wsb-stkTable[data-stock-members="1"] th[data-sortable="1"]:hover{color:var(--dsw-alias-label-primary)}
-.wsb-stkTable[data-stock-members="1"] th[data-on="true"]{color:var(--wsb-c1)}
+/* 活动排序列用一条中性色的下划线标注，而不是品牌蓝：蓝色在这张表里会让"哪个在排序"和
+   "涨跌"两种含义混在一起。用 rgba 而不是 color-mix —— 下划线是这条 Header 唯一的指示，
+   不能因为某个渲染器不支持 color-mix 就整条声明被丢掉。 */
+.wsb-stkTable[data-stock-members="1"] th[data-on="true"]{color:var(--dsw-alias-label-primary);
+  box-shadow:inset 0 -2px 0 0 rgba(255,255,255,.62)}
+/* 数值列一律右对齐 + 等宽数字；只有名称与代码靠左。 */
+.wsb-stkTable[data-stock-members="1"] th,.wsb-stkTable[data-stock-members="1"] td{text-align:right}
+.wsb-stkTable[data-stock-members="1"] th:first-child,.wsb-stkTable[data-stock-members="1"] td[data-code],
+.wsb-stkTable[data-stock-members="1"] td[data-name]{text-align:left}
+.wsb-stkTable[data-stock-members="1"] td[data-num],.wsb-stkTable[data-stock-members="1"] td[data-pct],
+.wsb-stkTable[data-stock-members="1"] th{font-variant-numeric:tabular-nums}
 .wsb-stkTable[data-stock-members="1"] td[data-code]{text-align:left;font-variant-numeric:tabular-nums;
-  color:var(--dsw-alias-label-secondary);font-size:11px}
-.wsb-stkTable[data-stock-members="1"] td[data-name]{text-align:left;max-width:190px;overflow:hidden;
-  text-overflow:ellipsis}
+  color:var(--dsw-alias-label-secondary);font-size:11.5px;letter-spacing:.02em}
+.wsb-stkTable[data-stock-members="1"] td[data-name]{text-align:left;max-width:180px;overflow:hidden;
+  text-overflow:ellipsis;font-weight:520}
+.wsb-stkTable[data-stock-members="1"] td[data-pct]{font-variant-numeric:tabular-nums}
 .wsb-stkTable[data-stock-members="1"] tr[data-dir="up"] td[data-pct]{color:var(--wsb-up);font-weight:640}
 .wsb-stkTable[data-stock-members="1"] tr[data-dir="down"] td[data-pct]{color:var(--wsb-down);font-weight:640}
-.wsb-stkMkRange{display:flex;align-items:center;gap:6px;min-width:120px}
-.wsb-stkMkRange>i{position:relative;display:block;flex:1 1 auto;height:4px;border-radius:3px;
-  background:color-mix(in srgb,var(--dsw-alias-border-l2) 70%,transparent)}
-.wsb-stkMkRange>i>b{position:absolute;top:-2px;width:2px;height:8px;border-radius:2px;
+/* 今日区间：一根细轨 + 一个游标。轨道不抢眼，游标用强调色点出来。 */
+.wsb-stkMkRange{display:flex;align-items:center;gap:7px;min-width:126px}
+.wsb-stkMkRange>i{position:relative;display:block;flex:1 1 auto;height:3px;border-radius:3px;
+  background:color-mix(in srgb,var(--dsw-alias-border-l2) 62%,transparent)}
+.wsb-stkMkRange>i>b{position:absolute;top:-2.5px;width:2px;height:8px;border-radius:2px;
   background:var(--dsw-alias-label-primary)}
 .wsb-stkMkRange>em{flex:0 0 auto;font-style:normal;font-size:10px;color:var(--dsw-alias-label-secondary);
-  font-variant-numeric:tabular-nums}
+  font-variant-numeric:tabular-nums;min-width:34px}
+.wsb-stkMkRange>em:last-child{text-align:right}
 
 .wsb-stkFail{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;font-size:10.5px;
   color:var(--dsw-alias-label-secondary)}
@@ -2477,8 +2516,10 @@ window.__ModuleLoader__.load({
         stockViewMarkets: '板块', stockViewMembers: '个股',
         stockMarketsTitle: '市场板块', stockMarketsHint: '点任意板块，查看它内部的全部个股行情。',
         stockMkBack: '返回板块', stockMkOpen: '查看个股',
-        stockMkTotal: '板块共', stockMkShownN: '只，本次显示', stockMkRankOnly: '只（活跃榜，按涨幅取前若干名）',
-        stockMkBoardAll: '只（该板块的完整名单）',
+        // 作用域标签要短：它出现在每张卡片的一行小字里，写成长句就是噪声。
+        stockMkScopeFull: '完整名单', stockMkScopeRank: '活跃榜',
+        stockMkTotal: '板块共', stockMkShownN: '只，本次显示', stockMkShown: '只，显示',
+        stockMkHintScope: '完整名单', stockMkHintRank: '活跃榜 · 按涨幅取前 100 名',
         stockMkUpdated: '更新于', stockMkSearch: '搜索代码或名称',
         stockMkSortPct: '涨幅', stockMkSortAmount: '成交额', stockMkSortTurnover: '换手率',
         stockMkSortCap: '总市值', stockMkSortPrice: '价格', stockMkSortCode: '代码',
@@ -2714,9 +2755,10 @@ window.__ModuleLoader__.load({
         stockDisclaimer: 'Quotes come from public endpoints, may be delayed, and are for reference only — not investment advice.',
         stockViewMarkets: 'Boards', stockViewMembers: 'Constituents',
         stockMarketsTitle: 'Market boards', stockMarketsHint: 'Open any board to see every stock inside it.',
-        stockMkBack: 'Back to boards', stockMkOpen: 'Open constituents',
-        stockMkTotal: 'board of', stockMkShownN: 'stocks, showing', stockMkRankOnly: '(active slice, top by change %)',
-        stockMkBoardAll: '(the full list for this board)',
+        stockMkBack: 'Boards', stockMkOpen: 'Open constituents',
+        stockMkScopeFull: 'Full list', stockMkScopeRank: 'Most active',
+        stockMkTotal: 'board of', stockMkShownN: 'stocks, showing', stockMkShown: 'stocks, showing',
+        stockMkHintScope: 'full list', stockMkHintRank: 'most active · top 100 by change %',
         stockMkUpdated: 'updated', stockMkSearch: 'Search code or name',
         stockMkSortPct: 'Change %', stockMkSortAmount: 'Turnover', stockMkSortTurnover: 'Turnover rate',
         stockMkSortCap: 'Market cap', stockMkSortPrice: 'Price', stockMkSortCode: 'Code',
@@ -11905,7 +11947,12 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'wsb-stkMkMain' },
           h('span', { className: 'wsb-stkMkName' }, market.name),
-          h('span', { className: 'wsb-stkMkMeta' }, market.region + ' · ' + (market.scope === 'board' ? t.stockMkBoardAll : t.stockMkRankOnly))),
+          // 这里只放「区域 + 作用域」。早先还插了一个数量，但 `op=markets` 根本不发数量，
+          // 于是每一行都渲染成「A股 · 只（…）」—— 一个凭空出现的「只」。
+          h('span', { className: 'wsb-stkMkMeta' },
+            market.region,
+            h('i', { className: 'wsb-stkMkScope', 'data-scope': market.scope },
+              market.scope === 'board' ? t.stockMkScopeFull : t.stockMkScopeRank))),
         h('svg', { className: 'wsb-stkMkGo', viewBox: '0 0 24 24', 'aria-hidden': 'true' },
           h('path', { d: 'M9.5 6l6 6-6 6', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' }))));
 
@@ -12013,19 +12060,27 @@ window.__ModuleLoader__.load({
             h('em', null, mkFixed(high, digits)))));
       });
 
-      const scopeNote = market && market.scope === 'rank' ? t.stockMkRankOnly : t.stockMkBoardAll;
+      const scopeNote = market && market.scope === 'rank' ? t.stockMkHintRank : t.stockMkHintScope;
 
       return h('div', { 'data-stock-members-view': market ? market.id : '1' },
-        h('div', { className: 'wsb-stkMkBar' },
+        // 一条头部，承载「返回 · 板块名 · 规模 · 搜索 · 刷新」。早先这里有三处都在说同一件事
+        // （状态行 + 头部副标题 + 计数行），把仅有的视觉重量浪费在重复上。
+        h('div', { className: 'wsb-stkMkHead' },
           h('button', {
-            type: 'button', className: 'wsb-btn', 'data-stock-mk-back': '1', onClick: onBack,
-          }, '‹ ' + t.stockMkBack),
+            type: 'button', className: 'wsb-stkMkBack', 'data-stock-mk-back': '1',
+            onClick: onBack, title: t.stockMkBack,
+          },
+            h('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' },
+              h('path', { d: 'M14.5 6 8.5 12l6 6', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round' })),
+            h('span', null, t.stockMkBack)),
           h('div', { className: 'wsb-stkMkWho' },
             h('b', null, (market && market.name) || t.stockViewMembers),
             h('span', { className: 'wsb-stkMkCount' },
-              t.stockMkTotal + ' ' + mkFixed(state.total, 0) + ' ' + t.stockMkShownN + ' ' + shown.length + ' ' + scopeNote)),
+              market ? market.region + ' · ' : '',
+              t.stockMkTotal + ' ' + mkFixed(state.total, 0) + ' ' + t.stockMkShown + ' ' + shown.length,
+              h('i', { className: 'wsb-stkMkScope', 'data-scope': market && market.scope }, scopeNote))),
           h('input', {
-            className: 'wsb-input', 'data-stock-mk-search': '1', value: query,
+            className: 'wsb-input wsb-stkMkSearch', 'data-stock-mk-search': '1', value: query,
             placeholder: t.stockMkSearch, 'aria-label': t.stockMkSearch,
             onChange: (event) => setQuery(event.target.value),
           }),
@@ -12034,11 +12089,6 @@ window.__ModuleLoader__.load({
             'data-busy': busy ? 'true' : 'false', disabled: busy,
             onClick: onRefresh,
           }, busy ? t.stockRefreshing : t.stockRefresh)),
-        // 单独一条说明「这是多少只里的多少只」，因为板块可以是 1846 只而这里只给一片。
-        h('div', { className: 'wsb-stkStatus', 'data-stock-mk-status': '1' },
-          h('span', null, market ? market.region : ''),
-          h('span', null, t.stockMkTotal + ' ' + mkFixed(state.total, 0) + ' ' + t.stockMkShownN + ' ' + state.rows.length),
-          h('span', null, scopeNote)),
         state.error
           ? h('div', { className: 'wsb-stkNote', 'data-tone': 'warn', 'data-stock-mk-error': '1' }, t.stockFetchFailed + '：' + state.error)
           : null,
@@ -12234,9 +12284,8 @@ window.__ModuleLoader__.load({
           h('span', null, marketsData.list.length
             ? t.stockMarketsTitle + ' ' + marketsData.list.length
             : ''),
-          h('span', null, openMarket
-            ? (t.stockMkTotal + ' ' + mkFixed(membersData.total, 0) + ' ' + t.stockMkShownN + ' ' + membersData.rows.length)
-            : t.stockMarketsHint),
+          // 打开某个板块时头部已经承担了「多少只里的多少只」，这里再说一遍就是重复。
+          h('span', null, openMarket ? '' : t.stockMarketsHint),
           marketsData.error || membersData.error
             ? h('span', { 'data-stock-failed': '1' }, t.stockFetchFailed)
             : null)

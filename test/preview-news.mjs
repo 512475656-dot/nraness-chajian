@@ -169,7 +169,7 @@ function render(component, props) {
 //#region the module's own CSS, extracted verbatim
 
 const source = fs.readFileSync(path.join(REPO, 'client.js'), 'utf8');
-const cssMatch = /const CSS = `([\s\S]*?)`;\n/.exec(source);
+const cssMatch = /^[ \t]*const CSS = `([\s\S]*?)`;[ \t]*$/m.exec(source);
 if (!cssMatch) throw new Error('could not find the CSS template in client.js');
 const CSS = cssMatch[1];
 
