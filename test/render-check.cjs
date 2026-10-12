@@ -3643,20 +3643,26 @@ async function main() {
       }
     }
     for (const marker of ['data-note-undo', 'data-note-redo', 'data-note-tidy', 'data-note-outline',
-      'data-note-inspector', 'data-note-zoom-in', 'data-note-zoom-out', 'data-note-fit', 'data-note-actual']) {
+      'data-note-inspector', 'data-note-fit']) {
       if (!view.elements.some((element) => element.props[marker] !== undefined)) {
         throw new Error('toolbar is missing ' + marker);
       }
     }
-    // 撤销 / 重做 / 整理 现在和「文件」同在**第二行**的工具带里，第一行只留导航与面板开关。
-    // 它们原来挤在第一行右侧，那一行只有这三个是"对整张图的操作"。
+    // − / 百分比 / + / 1:1 四个按钮已删除，只留「适应画布」并入工具带。
+    // 缩放能力没有丢：滚轮仍然缩放，Ctrl+0 / Ctrl+加减 仍然在（见 noteKeyHint）。
+    for (const marker of ['data-note-zoom-in', 'data-note-zoom-out', 'data-note-zoom-label', 'data-note-actual']) {
+      if (view.elements.some((element) => element.props[marker] !== undefined)) {
+        throw new Error(marker + ' should have been removed from the toolbar');
+      }
+    }
+    // 撤销 / 重做 / 整理 / 适应画布 现在同在**第二行**的工具带里，第一行只留导航与面板开关。
     const inRow = (marker, rowIndex) => {
       const row = view.elements.filter((element) => hasClass(element, 'wsb-noteTopRow'))[rowIndex];
       if (!row) throw new Error('no toolbar row ' + rowIndex);
       return JSON.stringify(row).indexOf("'" + marker + "'") >= 0
         || JSON.stringify(row).indexOf('"' + marker + '"') >= 0;
     };
-    for (const marker of ['data-note-undo', 'data-note-redo', 'data-note-tidy', 'data-note-file']) {
+    for (const marker of ['data-note-undo', 'data-note-redo', 'data-note-tidy', 'data-note-fit', 'data-note-file']) {
       if (!inRow(marker, 1)) throw new Error(marker + ' is not in the second toolbar row');
     }
     for (const marker of ['data-note-outline', 'data-note-inspector']) {
@@ -3676,8 +3682,6 @@ async function main() {
     if (Number(stageCss[1]) > 0) {
       throw new Error('.wsb-noteStage is at z-index ' + stageCss[1] + ', which lets it cover the top bar again');
     }
-    const label = view.elements.find((element) => element.props['data-note-zoom-label'] !== undefined);
-    if (!/%$/.test(String(label.props['data-note-zoom-label']))) throw new Error('the zoom readout is not a percentage');
     if (view.text.indexOf('检查器') < 0) throw new Error('the inspector pane has no header');
     // The camera has to be settled before the map is painted: a first frame at 100 % in the corner
     // followed by a jump to the fit is a visible flash, and the fit needs the canvas size, which

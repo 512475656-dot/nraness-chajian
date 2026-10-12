@@ -1093,9 +1093,6 @@ window.__ModuleLoader__.load({
   transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease}
 .wsb-noteSwatch:hover{transform:translateY(-1px) scale(1.08)}
 .wsb-noteSwatch[data-on="true"]{box-shadow:0 0 0 2px var(--dsw-alias-bg-base),0 0 0 3.5px var(--wsb-c1)}
-.wsb-noteZoom{display:inline-flex;align-items:center;gap:4px}
-.wsb-noteZoomLabel{min-width:46px;text-align:center;font-size:11px;color:var(--dsw-alias-label-secondary);
-  font-variant-numeric:tabular-nums}
 
 /* ---- 文件: 一个按钮打开「新建 / 保存 / 打开 / 导出」 ------------------------------------------
    四个并排按钮加一个独立导出下拉，把顶栏撑得很长；它们本来就是同一类动作（对整张图做的事），
@@ -2448,7 +2445,7 @@ window.__ModuleLoader__.load({
         noteNoteSwitched: '已切换到',
         noteNoteDeleted: '已删除', noteNoteLastOne: '最后一篇笔记不能删除',
         noteJustNow: '刚刚', noteMinAgo: ' 分钟前', noteHourAgo: ' 小时前', noteDayAgo: ' 天前',
-        noteKeyHint: '双击卡片改名 · Tab 加子节点 · Enter 加同级 · Delete 删除 · 拖拽卡片移动 · 拖拽空白平移 · 滚轮缩放 · Ctrl+滚轮左右移动 · Ctrl+Z 撤销',
+        noteKeyHint: '双击卡片改名 · Tab 加子节点 · Enter 加同级 · Delete 删除 · 拖拽卡片移动 · 拖拽空白平移 · 滚轮缩放 · Ctrl+滚轮左右移动 · Ctrl+Z 撤销 · Ctrl+0 实际大小 · Ctrl+加减 缩放',
         // 新建 / 右键菜单 / Blender 式连线
         noteNew: '新建',
         noteNewHint: '清空画布，用这个名字新建一张图（可撤销）',
@@ -2695,7 +2692,7 @@ window.__ModuleLoader__.load({
         noteNoteSwitched: 'Switched to',
         noteNoteDeleted: 'Deleted', noteNoteLastOne: 'The last note cannot be deleted',
         noteJustNow: 'just now', noteMinAgo: ' min ago', noteHourAgo: ' h ago', noteDayAgo: ' d ago',
-        noteKeyHint: 'Double-click a card to rename · Tab adds a child · Enter adds a sibling · Delete removes · drag a card to move it · drag the background to pan · wheel to zoom · Ctrl+wheel to move sideways · Ctrl+Z to undo',
+        noteKeyHint: 'Double-click a card to rename · Tab adds a child · Enter adds a sibling · Delete removes · drag a card to move it · drag the background to pan · wheel to zoom · Ctrl+wheel to move sideways · Ctrl+Z to undo · Ctrl+0 actual size · Ctrl+plus/minus zoom',
         // new map / context menu / Blender-style linking
         noteNew: 'New',
         noteNewHint: 'Clear the canvas and start a new map with this name (undoable)',
@@ -10080,8 +10077,6 @@ window.__ModuleLoader__.load({
         }, false),
       }, label);
 
-      const zoomLabel = Math.round(pan.zoom * 100) + '%';
-
       return h('div', {
         className: 'wsb-screen', 'data-role': 'notes', 'data-anim': anim, style: screenStyle,
         'data-note-layout-now': style.layout, 'data-note-theme-now': style.theme,
@@ -10198,15 +10193,14 @@ window.__ModuleLoader__.load({
                 h('button', {
                   type: 'button', className: 'wsb-btn', 'data-note-tidy': '1',
                   title: t.noteTidyHint, onClick: tidy,
-                }, t.noteTidy)),
-              h('div', { className: 'wsb-noteTopSpacer' }),
-              h('div', { className: 'wsb-noteGroup' },
-                h('div', { className: 'wsb-noteZoom' },
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-zoom-out': '1', title: t.noteZoomOut, onClick: () => setZoom(1 / 1.15) }, '−'),
-                  h('span', { className: 'wsb-noteZoomLabel', 'data-note-zoom-label': zoomLabel }, zoomLabel),
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-zoom-in': '1', title: t.noteZoomIn, onClick: () => setZoom(1.15) }, '+'),
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-fit': '1', title: t.noteFit, onClick: fitMap }, t.noteFit),
-                  h('button', { type: 'button', className: 'wsb-btn', 'data-note-actual': '1', title: t.noteActual, onClick: actualSize }, '1:1'))))),
+                }, t.noteTidy),
+                // 适应画布并入这条工具带，紧跟「整理」。它原来和最右边那组
+                // − / 百分比 / + / 1:1 放在一起 —— 那四个是「精确控制缩放」，而适应画布是
+                // 「把整张图收进视野」，属于对图的整体操作，和撤销 / 整理是同一类。
+                h('button', {
+                  type: 'button', className: 'wsb-btn', 'data-note-fit': '1',
+                  title: t.noteFit, onClick: fitMap,
+                }, t.noteFit)))),
           h('div', {
             className: 'wsb-noteStage',
             'data-note-outline-on': outline ? 'true' : 'false',
