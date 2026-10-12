@@ -10116,7 +10116,9 @@ window.__ModuleLoader__.load({
                 onClick: () => { const next = !inspector; setInspector(next); persistView({ inspector: next }) },
               }, t.noteInspector)),
             h('div', { className: 'wsb-noteTopRow' },
-              h('div', { className: 'wsb-noteGroup', style: { marginLeft: 'auto' } },
+              // 工具带整条靠左。原来这一组带 `marginLeft:'auto'`，把结构/连线/配色/文件/撤销/
+              // 整理/适应画布一起推到最右边、只留标签在左端，看起来像两截。
+              h('div', { className: 'wsb-noteGroup' },
                 h('b', null, t.noteLayout),
                 h('div', { className: 'wsb-seg', 'data-note-layouts': '1' },
                   NOTE_LAYOUTS.map((id) => layoutButton(id, t['noteLay' + id.charAt(0).toUpperCase() + id.slice(1)])))),
