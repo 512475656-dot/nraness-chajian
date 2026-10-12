@@ -3166,9 +3166,10 @@ async function main() {
     const source = noteSource();
     const names = ['noteVisibleChildren', 'noteCardBox', 'noteSpanV', 'noteSpanH', 'noteLevels',
       'placeBranch', 'noteCentreNode', 'noteLayoutMind', 'noteLayoutLogic', 'noteLayoutTree',
-      'noteLayoutOrg', 'stackAwayFromAxis', 'noteLayoutTimeline', 'noteLayoutFish', 'noteFinish',
-      'noteLayoutFor', 'noteWireD', 'walkNotes'];
-    const consts = ['NOTE_GAP_X', 'NOTE_GAP_Y', 'NOTE_GAP_L', 'NOTE_GAP_ROW', 'NOTE_AXIS_OFF', 'NOTE_RIB', 'NOTE_PAD'];
+      'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'noteLayoutTimeline', 'noteLayoutFish',
+      'noteFinish', 'noteLayoutFor', 'noteWireD', 'walkNotes'];
+    const consts = ['NOTE_GAP_X', 'NOTE_GAP_Y', 'NOTE_GAP_L', 'NOTE_GAP_ROW', 'NOTE_AXIS_OFF', 'NOTE_RIB',
+      'NOTE_SUB_INDENT', 'NOTE_PAD'];
     const values = consts.map((name) => {
       const hit = new RegExp('const ' + name + ' = (-?[\\d.]+)').exec(source);
       if (!hit) throw new Error('the constant ' + name + ' is gone from client.js');
@@ -3214,6 +3215,57 @@ async function main() {
       // keystroke, because the tree object is rebuilt whenever anything is typed.
       if (JSON.stringify(g.noteLayoutFor(kind, noteFixture())) !== JSON.stringify(result)) {
         throw new Error(kind + ' is not deterministic');
+      }
+    }
+  });
+
+  check('时间轴 / 鱼骨图 的深层链不会互相压住', () => {
+    // 这一条是为了一个真实 bug：`stackAwayFromAxis` 用固定缩进、并且从**父卡片**的起点开始
+    // 摆孙辈，于是「一个有兄弟又有孩子的节点」会让孙辈正好落在叔叔的卡片上 —— 在深度 3 的
+    // 树上，n4 与 n6 实测是两个**完全相同的矩形**。
+    //
+    // 上一条用例抓不到它，因为它的树只有两层深。判据是「非父子重叠必须为 0」：
+    // 父子卡片沿轴层层递进时本来就会横向压住一点（那是设计），其余任何重叠都是画错了。
+    const g = noteGeometry;
+    const deep = {
+      id: 'r', title: '中心', body: '', children: [
+        { id: 'a', title: 'A', body: '', children: [
+          { id: 'a1', title: 'A1', body: '', children: [
+            { id: 'a1x', title: 'A1x', body: '', children: [] },
+            { id: 'a1y', title: 'A1y', body: '', children: [] },
+          ] },
+          { id: 'a2', title: 'A2', body: '', children: [] },
+        ] },
+        { id: 'b', title: 'B', body: '', children: [
+          { id: 'b1', title: 'B1', body: '', children: [
+            { id: 'b1x', title: 'B1x', body: '', children: [] },
+          ] },
+        ] },
+      ],
+    };
+    const parentOf = {};
+    const index = (node) => {
+      for (const kid of node.children || []) { parentOf[kid.id] = node.id; index(kid) }
+    };
+    index(deep);
+    const isAncestor = (maybeAncestor, id) => {
+      let walk = id;
+      while (walk) { if (walk === maybeAncestor) return true; walk = parentOf[walk] }
+      return false;
+    };
+    for (const kind of ['timeline', 'fish', 'mind', 'logic', 'org', 'tree']) {
+      const result = g.noteLayoutFor(kind, deep);
+      for (let i = 0; i < result.nodes.length; i += 1) {
+        for (let j = i + 1; j < result.nodes.length; j += 1) {
+          const a = result.nodes[i];
+          const b = result.nodes[j];
+          const apart = a.x >= b.x + b.w - 0.5 || b.x >= a.x + a.w - 0.5
+            || a.y >= b.y + b.h - 0.5 || b.y >= a.y + a.h - 0.5;
+          if (apart) continue;
+          if (isAncestor(a.id, b.id) || isAncestor(b.id, a.id)) continue;
+          throw new Error(kind + ' 让 ' + a.id + ' 压住了 ' + b.id
+            + '（不是父子关系，属于排布错误）');
+        }
       }
     }
   });
@@ -3331,6 +3383,161 @@ async function main() {
     return openFirstConsole();
   };
 
+  /** The note stack as stored. A module written by the previous version has no list at all. */
+  const noteDocsStored = () => noteModule().noteDocs || null;
+
+  /**
+   * Add a child through the card's own + button.
+   *
+   * It is a pointer gesture, not a click: press starts the Blender-style link drag and release
+   * without movement is what means "add a child". So a plain `harness.click` does nothing — the
+   * harness has to press and let go, exactly as the tool expects a reader to.
+   */
+  const addChildViaCard = (view, id) => {
+    const canvasEl = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
+    const plus = view.elements.find((element) => element.props['data-note-card-add'] === id);
+    if (!plus) {
+      const all = runtime.sink.elements;
+      const cards = all
+        .filter((element) => element.props['data-note-card'] !== undefined)
+        .map((element) => element.props['data-note-card']);
+      const probe = {
+        noteRoot: noteTreeStored() && noteTreeStored().id,
+        activeNoteId: noteModule().activeNoteId,
+        docs: (noteDocsStored() || []).map((doc) => [doc.id, doc.root.id, doc.root.title]),
+        blank: all.some((element) => element.props['data-note-blank'] !== undefined),
+        noWorld: !all.some((element) => element.props['data-note-world'] !== undefined),
+        role: all.some((element) => element.props['data-role'] === 'notes'),
+        homeCards: all.filter((element) => hasClass(element, 'wsb-card')).length,
+      };
+      throw new Error('no + button on card ' + id + '; probe=' + JSON.stringify(probe));
+    }
+    plus.props.onPointerDown({
+      button: 0, clientX: 300, clientY: 200, pointerId: 9, stopPropagation() {}, preventDefault() {},
+      currentTarget: { setPointerCapture() {} },
+    });
+    canvasEl().props.onPointerUp();
+    return commitEdit();
+  };
+
+  check('左栏是笔记历史：新建会加一篇，点击会切过去', () => {
+    let view = openNotebook(noteFixture());
+    // 旧存档（只有 noteRoot）必须先被当成「一篇笔记」，而不是丢掉
+    if (noteDocsStored() !== null) {
+      throw new Error('opening a legacy module wrote a note list before the reader did anything');
+    }
+    const docRows = () => view.elements.filter((element) => element.props['data-note-doc'] !== undefined);
+    // 还没新建过，列表里应当已经有一篇（迁移出来的那一篇）
+    const firstTitle = noteTreeStored().title;
+    if (!firstTitle) throw new Error('the fixture has no centre title to migrate');
+    // 新建第二篇。**注意**：`view` 是一次渲染的快照，不是活的引用 —— 输入框的值必须在
+    // 打字之后再从 runtime 取一次，否则读到的是打字前的旧元素。
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-new-note'] === '1'));
+    const field = () => runtime.sink.elements.find((element) => element.props['data-note-name-input'] === '1');
+    if (!field()) throw new Error('新建笔记 did not offer a name field');
+    field().props.onChange({ target: { value: '第二篇' } });
+    harness.flush(runtime);
+    if (field().props.value !== '第二篇') {
+      throw new Error('the name field did not keep what was typed: ' + JSON.stringify(field().props.value));
+    }
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-name-ok'] === '1'));
+    const docs = noteDocsStored();
+    if (!docs || docs.length !== 2) throw new Error('新建笔记 did not add a note, saw ' + (docs ? docs.length : 'none'));
+    if (noteModule().activeNoteId !== docs[1].id) throw new Error('the new note was not opened');
+    if (noteTreeStored().title !== '第二篇') {
+      throw new Error('the canvas did not switch to the new note');
+    }
+    if (docRows().length !== 2) throw new Error('the history rail lists ' + docRows().length + ' of 2 notes');
+    // 历史里两篇都点得到，且当前那篇被标出来
+    const openRows = view.elements.filter((element) => element.props['data-note-doc'] !== undefined
+      && element.props['data-open'] === 'true');
+    if (openRows.length !== 1) throw new Error('exactly one note should be marked open, saw ' + openRows.length);
+    if (openRows[0].props['data-note-doc'] !== docs[1].id) throw new Error('the wrong note is marked open');
+    // 点回第一篇：树要换回原来那棵
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-doc'] === docs[0].id));
+    if (noteModule().activeNoteId !== docs[0].id) throw new Error('clicking a note did not open it');
+    if (noteTreeStored().title !== firstTitle) {
+      throw new Error('switching notes did not bring back the first tree');
+    }
+    // 两棵树都必须还在（切换不能把另一篇的内容覆盖掉）
+    const after = noteDocsStored();
+    if (after.length !== 2) throw new Error('switching lost a note');
+    if (after[1].root.title !== '第二篇') throw new Error('the second note lost its own content');
+  });
+
+  check('右键可以删除一篇笔记，但最后一篇删不掉', () => {
+    let view = openNotebook(noteFixture());
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-new-note'] === '1'));
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-name-ok'] === '1'));
+    let docs = noteDocsStored();
+    if (docs.length !== 2) throw new Error('setup failed: expected 2 notes');
+
+    // 右键第一篇 → 出菜单 → 删除
+    const row = runtime.sink.elements.find((element) => element.props['data-note-doc'] === docs[0].id);
+    row.props.onContextMenu({ preventDefault() {}, clientX: 40, clientY: 60 });
+    view = harness.flush(runtime);
+    const menu = view.elements.find((element) => element.props['data-note-doc-menu'] !== undefined);
+    if (!menu) throw new Error('右键没有打开笔记菜单');
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-doc-del'] === docs[0].id));
+    docs = noteDocsStored();
+    if (docs.length !== 1) throw new Error('删除没有生效，还有 ' + docs.length + ' 篇');
+    // 删掉当前打开那篇时，画布要落到邻居上，而不是空白
+    if (!noteTreeStored()) throw new Error('deleting the open note left the canvas with no tree');
+
+    // 最后一篇：拒绝并说明原因
+    const last = runtime.sink.elements.find((element) => element.props['data-note-doc'] === docs[0].id);
+    last.props.onContextMenu({ preventDefault() {}, clientX: 10, clientY: 10 });
+    view = harness.flush(runtime);
+    harness.click(runtime, (element) => element.props['data-note-doc-del'] === docs[0].id);
+    view = harness.flush(runtime);
+    if (noteDocsStored().length !== 1) throw new Error('最后一篇被删掉了');
+    const notice = view.elements.find((element) => element.props['data-note-notice'] !== undefined);
+    if (!notice) throw new Error('拒绝删除时没有给任何说明');
+    if (!/最后一篇/.test(JSON.stringify(notice.children))) {
+      throw new Error('拒绝的理由没有说清是最后一篇');
+    }
+  });
+
+  check('每篇笔记的树各自独立地存进本地，重开还在', () => {
+    let view = openNotebook(noteFixture());
+    // 第一篇里加一个子节点（每篇笔记有自己的根节点，所以要取当前那篇的根 id）
+    view = addChildViaCard(view, noteTreeStored().id);
+    const firstId = noteModule().activeNoteId;
+    const firstKids = noteTreeStored().children.length;
+
+    // 第二篇：新建 + 加一个自己的子节点
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-new-note'] === '1'));
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-name-ok'] === '1'));
+    view = addChildViaCard(view, noteTreeStored().id);
+    const secondId = noteModule().activeNoteId;
+
+    const stored = noteDocsStored();
+    if (stored.length !== 2) throw new Error('expected two notes in storage');
+    const first = stored.find((doc) => doc.id === firstId);
+    const second = stored.find((doc) => doc.id === secondId);
+    if (!first || !second) throw new Error('a note lost its identity');
+    if (first.root.children.length !== firstKids) {
+      throw new Error('the first note did not keep its own children');
+    }
+    if (second.root.children.length !== 1) {
+      throw new Error('the second note did not keep its own child');
+    }
+    if (firstId === secondId) throw new Error('both notes got the same id');
+    // 本地存储里确实有，而不是只活在内存里
+    const raw = windowStub.localStorage.getItem('dsh-workbench.v3');
+    if (raw.indexOf(firstId) < 0 || raw.indexOf(secondId) < 0) {
+      throw new Error('the notes were not written to local storage');
+    }
+  });
+
   check('框架笔记 opens as a standalone mind map with no console chrome', () => {
     const view = openNotebook(noteFixture());
     if (!view) throw new Error('the notebook window did not open');
@@ -3365,15 +3572,16 @@ async function main() {
     if (noteCardEl(view, 'a1').props['data-depth'] !== '2') throw new Error('depth is not published on the card');
     if (!view.elements.some((element) => element.props['data-note-wires'] !== undefined)) throw new Error('no wire layer');
     if (!view.elements.some((element) => element.props['data-note-wire'] === 'r>a')) throw new Error('no wire from r to a');
-    if (!view.elements.some((element) => element.props['data-note-rows'] !== undefined)) throw new Error('no outline rail');
-    for (const id of ['r', 'a', 'a1', 'b', 'c', 'd']) {
-      if (!view.elements.some((element) => element.props['data-note-row'] === id)) {
-        throw new Error('outline row missing for ' + id);
-      }
+    // 左栏现在是**笔记历史**（一篇笔记一行），不再是这棵树的第二份大纲：树本身就是中间那张
+    // 图，再列一遍没有新信息，而「我有哪些笔记」原来没有地方问。
+    if (!view.elements.some((element) => element.props['data-note-history'] === '1')) {
+      throw new Error('no note-history rail');
     }
-    // A picture is advertised in the outline even before its blob has been read.
-    if (!view.elements.some((element) => element.props['data-note-row-image'] === 'b')) {
-      throw new Error('the outline does not mark the node that has a picture');
+    if (!view.elements.some((element) => element.props['data-note-doc-rows'] !== undefined)) {
+      throw new Error('the note-history rail lists no notes');
+    }
+    if (!view.elements.some((element) => element.props['data-note-new-note'] === '1')) {
+      throw new Error('the note-history rail cannot create a note');
     }
     // The inspector offers every edit the window claims to support.
     for (const marker of ['data-note-title-input', 'data-note-body-input', 'data-note-image',
@@ -3620,25 +3828,28 @@ async function main() {
       (element) => element.props['data-note-collapse'] !== undefined));
     const grandId = noteById(noteTreeStored(), newId).children[0].id;
     if (noteCardEl(view, grandId)) throw new Error('a collapsed branch is still drawn');
-    if (view.elements.some((element) => element.props['data-note-row'] === grandId)) {
-      throw new Error('a collapsed branch is still listed in the outline');
-    }
     if (!view.elements.some((element) => element.props['data-note-card-badge'] === newId)) {
       throw new Error('a collapsed branch does not say how much it hides');
     }
-    const twist = view.elements.find((element) => element.props['data-note-twist'] === newId);
-    if (!twist || twist.props['data-open'] !== 'false') throw new Error('the twisty is not closed');
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-twist'] === newId));
-    if (!noteCardEl(view, grandId)) throw new Error('opening the twisty did not bring the branch back');
-    if (!view.elements.some((element) => element.props['data-note-row'] === grandId)) {
-      throw new Error('opening the twisty did not restore the outline row');
+    // 折叠的开关现在只有两处：画布卡片的角标（只显示数量）与检查器里的按钮 —— 左栏不再有树。
+    const twist = view.elements.find((element) => element.props['data-note-collapse'] !== undefined);
+    if (!twist) throw new Error('the collapse control is gone entirely');
+    if (!/展开|Expand/.test(JSON.stringify(twist.children))) {
+      throw new Error('the collapse control does not offer to expand the branch again');
     }
-    // 整理 is only about manual drags; the deletion below must take the whole branch with it.
-    view = selectCard(newId);
     view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-delete'] !== undefined));
-    if (noteById(noteTreeStored(), newId)) throw new Error('the branch was not deleted');
+      (element) => element.props['data-note-collapse'] !== undefined));
+    if (!noteCardEl(view, grandId)) throw new Error('opening the twisty did not bring the branch back');
+    // 整理 is only about manual drags; the deletion below must take the whole branch with it.
+    // 选中与点击放在**同一次 dispatch**里：`view` 是渲染快照，分开做时点击用的元素来自上一次
+    // 渲染，指针捕获还可能把事件路由到别处 —— 同一次 dispatch 才是「选中，然后按下删除」。
+    view = harness.dispatch(runtime, () => {
+      selectCard(newId);
+      harness.click(runtime, (element) => element.props['data-note-delete'] !== undefined);
+    });
+    if (noteById(noteTreeStored(), newId)) {
+      throw new Error('the branch was not deleted: ' + newId);
+    }
     if (noteById(noteTreeStored(), grandId)) throw new Error('a deleted branch left its children behind');
     // The centre is the one node that cannot be deleted.
     view = selectCard('n0');
@@ -4149,15 +4360,15 @@ async function main() {
     }
   });
 
-  check('a node can be added from the outline, and every note string is in both languages', () => {
+  check('a node can be added from the canvas, and every note string is in both languages', () => {
     let view = openNotebook({ id: 'n0', title: '中心主题', body: '', children: [] });
-    view = harness.dispatch(runtime, () => harness.click(runtime,
-      (element) => element.props['data-note-row-add'] === 'n0'));
-    if (noteTreeStored().children.length !== 1) throw new Error('the outline + button added nothing');
+    // 加子节点现在走画布：卡片上的 + 或双击空白。用真正的 + 手势，和读者做的是同一件事。
+    view = addChildViaCard(view, 'n0');
+    if (noteTreeStored().children.length !== 1) throw new Error('the canvas + button added nothing');
     view = commitEdit();
-    // The outline and the map are two views of one tree, so both must show the new node.
+    // The map is the only view of the tree now, so the new node has to be drawn on it.
     const added = noteTreeStored().children[0].id;
-    if (!noteCardEl(view, added)) throw new Error('the outline added a node the map does not draw');
+    if (!noteCardEl(view, added)) throw new Error('the canvas added a node the map does not draw');
     // Retiring a feature must not leave its strings behind, and every string the map looks up by
     // concatenation has to exist in both dictionaries.
     const source = noteSource();
@@ -4177,7 +4388,11 @@ async function main() {
       'noteExportJson', 'noteExportJsonHint', 'noteSavedJson', 'noteSavedJsonMissing',
       'noteSavedXmind', 'noteSavedMm', 'noteSavedOpml', 'noteSavedMd', 'noteImported',
       'noteFileBadType', 'noteFileBadJson', 'noteFileBadRead',
-      'noteSaved', 'noteSaveFailed'];
+      'noteSaved', 'noteSaveFailed',
+      // 左栏改成笔记历史后新增的文案
+      'noteHistory', 'noteHistoryEmpty', 'noteNewNote', 'noteNoteUntitled', 'noteNoteCount',
+      'noteNoteSaved', 'noteNoteDelete', 'noteNoteDeleteHint', 'noteNoteSwitched',
+      'noteNoteDeleted', 'noteNoteLastOne', 'noteJustNow', 'noteMinAgo', 'noteHourAgo', 'noteDayAgo'];
     for (const key of keys) {
       const hits = (source.match(new RegExp('\\b' + key + ':', 'g')) || []).length;
       if (hits < 2) throw new Error('note string "' + key + '" is not defined in both languages (' + hits + ')');

@@ -1181,6 +1181,49 @@ window.__ModuleLoader__.load({
 .wsb-noteMenuItem>i{font-style:normal;width:15px;text-align:center;opacity:.85}
 .wsb-noteMenuItem>kbd{margin-left:auto;font:inherit;font-size:10px;color:var(--dsw-alias-label-secondary)}
 .wsb-noteMenuSep{height:1px;margin:3px 6px;background:var(--dsw-alias-border-l1)}
+/* 菜单遮罩：原来这个类名只在 JS 里出现，没有任何样式，所以点别处关不掉菜单。 */
+.wsb-noteMenuMask{position:fixed;inset:0;z-index:7;background:transparent}
+
+/* ---- 左栏：笔记历史 ------------------------------------------------------------
+   一行一篇笔记。开放中的那篇用强调色 + 左侧竖条标出来（和节点选中同一套语言），
+   元信息一行放节点数 / 图片数 / 时间 —— 这三样是画布上看不出来的。 */
+.wsb-noteHistory{overflow:hidden}
+.wsb-noteNewNote{width:100%;margin-bottom:8px}
+.wsb-noteNameRow{display:flex;align-items:center;gap:5px;margin-bottom:8px}
+.wsb-noteNameRow .wsb-input{flex:1 1 auto;min-width:0}
+.wsb-noteNameRow .wsb-btn{flex:0 0 auto}
+.wsb-noteDocRows{gap:2px}
+.wsb-noteDoc{position:relative;display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;
+  appearance:none;font:inherit;color:inherit;cursor:pointer;
+  padding:8px 9px 8px 11px;border-radius:10px;border:1px solid transparent;background:transparent;
+  transition:background .15s ease,border-color .15s ease}
+.wsb-noteDoc:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent)}
+.wsb-noteDoc::before{content:'';position:absolute;left:2px;top:9px;bottom:9px;width:2px;border-radius:2px;
+  background:transparent;transition:background .15s ease}
+/* 选中态：竖向强调条 + 一点底色。和画布上根节点的选中环呼应。 */
+.wsb-noteDoc[data-open="true"]{background:color-mix(in srgb,var(--wsb-c1) 15%,transparent);
+  border-color:color-mix(in srgb,var(--wsb-c1) 32%,transparent)}
+.wsb-noteDoc[data-open="true"]::before{background:var(--wsb-c1)}
+.wsb-noteDocDot{position:absolute;left:0;top:0;width:0;height:0}
+.wsb-noteDocMain{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.wsb-noteDocName{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wsb-noteDoc[data-open="true"] .wsb-noteDocName{color:var(--dsw-alias-label-primary)}
+.wsb-noteDocMeta{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.wsb-noteEmptyMini{padding:14px 10px;font-size:11.5px;line-height:1.65;text-align:center;
+  color:var(--dsw-alias-label-secondary)}
+.wsb-noteNotice{margin-top:8px;padding:7px 9px;border-radius:9px;font-size:10.5px;
+  background:color-mix(in srgb,var(--wsb-c1) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--wsb-c1) 26%,transparent);
+  color:var(--dsw-alias-label-primary)}
+.wsb-noteNotice[data-tone="warn"]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);
+  border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 30%,transparent)}
+.wsb-noteHistFoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;
+  padding-top:9px;border-top:1px solid var(--dsw-alias-border-l1);font-size:10px;
+  color:var(--dsw-alias-label-secondary)}
+.wsb-noteLinkBtn{appearance:none;border:0;background:transparent;cursor:pointer;font:inherit;font-size:10px;
+  color:color-mix(in srgb,var(--wsb-c1) 90%,transparent);padding:2px 3px;border-radius:6px}
+.wsb-noteLinkBtn:hover{color:var(--dsw-alias-label-primary)}
 .wsb-noteNewBox{position:absolute;left:50%;top:14px;translate:-50% 0;z-index:9;width:min(430px,88%);
   display:flex;flex-direction:column;gap:9px;padding:14px 15px;border-radius:16px;
   background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 92%,transparent);
@@ -1230,6 +1273,11 @@ window.__ModuleLoader__.load({
 .wsb-noteCard[data-shape="under"]{background:transparent !important;border-color:transparent !important;
   border-bottom:2px solid var(--note-accent) !important;border-radius:0;box-shadow:none !important}
 .wsb-noteCard[data-sel="true"]{box-shadow:0 0 0 2px var(--note-accent),0 14px 28px -18px rgba(0,0,0,.6)}
+/* 根节点（深度 0）的选中环**不能**用强调色：它的卡面本来就是强调色实心，同色描边等于没画。
+   所以根节点改用「亮环 + 一圈暗缝」，靠明暗对比而不是色相对比把自己标出来。 */
+.wsb-noteCard[data-depth="0"][data-sel="true"]{
+  box-shadow:0 0 0 2px var(--note-root-fg,#fff),0 0 0 4px color-mix(in srgb,var(--note-accent) 72%,#000),
+    0 16px 30px -18px rgba(0,0,0,.66)}
 .wsb-noteCard[data-hot="true"]{box-shadow:0 0 0 2px var(--wsb-c1),0 14px 28px -18px rgba(0,0,0,.6)}
 .wsb-noteCard:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
   background:var(--note-accent);opacity:.9}
@@ -2375,7 +2423,15 @@ window.__ModuleLoader__.load({
         noteShape: '形状', noteShapeRound: '圆角', noteShapeRect: '直角', noteShapeUnder: '下划线',
         noteColor: '颜色', noteColorAuto: '跟随结构', noteCollapse: '折叠', noteExpand: '展开',
         noteNodes: '节点', noteImages: '图片', noteLevel: '第 {n} 层', noteRoot: '中心',
-        noteKeyHint: '双击卡片改名 · Tab 加子节点 · Enter 加同级 · Delete 删除 · 拖拽卡片移动 · 拖拽空白平移 · Ctrl+滚轮缩放 · Ctrl+Z 撤销',
+        // 左栏：笔记历史（每一条 = 一张独立的图，新建的都会出现在这里）
+        noteHistory: '笔记历史', noteHistoryEmpty: '还没有笔记。点「新建笔记」开始一张。',
+        noteNewNote: '新建笔记', noteNoteUntitled: '未命名笔记', noteNoteCount: '篇',
+        noteNoteSaved: '已保存在本地', noteNoteDelete: '删除这篇笔记',
+        noteNoteDeleteHint: '右键笔记可以删除',
+        noteNoteSwitched: '已切换到',
+        noteNoteDeleted: '已删除', noteNoteLastOne: '最后一篇笔记不能删除',
+        noteJustNow: '刚刚', noteMinAgo: ' 分钟前', noteHourAgo: ' 小时前', noteDayAgo: ' 天前',
+        noteKeyHint: '双击卡片改名 · Tab 加子节点 · Enter 加同级 · Delete 删除 · 拖拽卡片移动 · 拖拽空白平移 · 滚轮缩放 · Ctrl+滚轮左右移动 · Ctrl+Z 撤销',
         // 新建 / 右键菜单 / Blender 式连线
         noteNew: '新建',
         noteNewHint: '清空画布，用这个名字新建一张图（可撤销）',
@@ -2615,7 +2671,14 @@ window.__ModuleLoader__.load({
         noteShape: 'Shape', noteShapeRound: 'Rounded', noteShapeRect: 'Square', noteShapeUnder: 'Underline',
         noteColor: 'Colour', noteColorAuto: 'Follow structure', noteCollapse: 'Collapse', noteExpand: 'Expand',
         noteNodes: 'nodes', noteImages: 'pictures', noteLevel: 'Level {n}', noteRoot: 'Centre',
-        noteKeyHint: 'Double-click a card to rename · Tab adds a child · Enter adds a sibling · Delete removes · drag a card to move it · drag the background to pan · Ctrl+wheel to zoom · Ctrl+Z to undo',
+        noteHistory: 'Note history', noteHistoryEmpty: 'No notes yet. Hit New note to start one.',
+        noteNewNote: 'New note', noteNoteUntitled: 'Untitled note', noteNoteCount: 'notes',
+        noteNoteSaved: 'saved locally', noteNoteDelete: 'Delete this note',
+        noteNoteDeleteHint: 'Right-click a note to delete it',
+        noteNoteSwitched: 'Switched to',
+        noteNoteDeleted: 'Deleted', noteNoteLastOne: 'The last note cannot be deleted',
+        noteJustNow: 'just now', noteMinAgo: ' min ago', noteHourAgo: ' h ago', noteDayAgo: ' d ago',
+        noteKeyHint: 'Double-click a card to rename · Tab adds a child · Enter adds a sibling · Delete removes · drag a card to move it · drag the background to pan · wheel to zoom · Ctrl+wheel to move sideways · Ctrl+Z to undo',
         // new map / context menu / Blender-style linking
         noteNew: 'New',
         noteNewHint: 'Clear the canvas and start a new map with this name (undoable)',
@@ -4039,6 +4102,123 @@ window.__ModuleLoader__.load({
     function noteTreeOf(module) {
       const source = module && module.noteRoot && typeof module.noteRoot === 'object' ? module.noteRoot : null;
       return source ? normalizeNoteNode(source) : defaultNoteRoot();
+    }
+
+    /* ---- 笔记：一个模块下的一叠图 ------------------------------------------------------------
+       Until this version a module held exactly ONE tree (`module.noteRoot`), so the left rail could
+       only ever show that tree's nodes. The rail is now the note history — every note the reader
+       has made, newest first — which needs several trees per module.
+
+       The shape is a list plus a pointer:
+
+           module.noteDocs = [{ id, name, root, created }]      // every note, in creation order
+           module.activeNoteId = '<id of the open one>'          // which note the canvas shows
+
+       `noteRoot` is deliberately kept in step with the active note, because it is what the older
+       code paths (导出 / 打开 / 新建 / 撤销) still read and write. Two representations of the same
+       truth is usually a smell; here it is the migration: a module written by the previous version
+       has `noteRoot` and no `noteDocs`, and the check below turns it into a one-note stack on
+       first open with nothing lost. */
+
+    /** A stable identity for a note, namespaced so it can never collide with a node id. */
+    function newNoteDocId() {
+      return newId('note-doc');
+    }
+
+    function normalizeNoteDoc(doc) {
+      const source = doc && typeof doc === 'object' ? doc : {};
+      return {
+        id: typeof source.id === 'string' && source.id ? source.id : newNoteDocId(),
+        name: typeof source.name === 'string' ? source.name : '',
+        root: normalizeNoteNode(source.root),
+        created: Number(source.created) || Date.now(),
+        // 是否已经离开「空画布」的起步说明。**按笔记记**，不是按模块记：新建一篇空笔记时它必须
+        // 重新是 false，否则新笔记会直接跳过起步说明（或者反过来，旧笔记被当成新建的）。
+        // 没有这个字段的存档按 true 处理 —— 它要么来自更早的版本（那时模块级标记已经翻过了），
+        // 要么来自迁移，两种情况下读者都不是第一次看到空画布。
+        started: source.started === undefined ? true : source.started === true,
+      };
+    }
+
+    /**
+     * The note stack of a module, migrated on read.
+     *
+     * Returns one entry for a module that predates the stack, built from its `noteRoot`, so the
+     * reader's existing map becomes the first note of the history rather than disappearing.
+     */
+    function noteDocsOf(module) {
+      const source = module && Array.isArray(module.noteDocs) ? module.noteDocs : null;
+      if (source && source.length) return source.map(normalizeNoteDoc);
+      return [normalizeNoteDoc({
+        name: '',
+        root: module && module.noteRoot ? module.noteRoot : defaultNoteRoot(),
+        created: Date.now(),
+        // 模块级标记是旧版的；它翻过就说明这张图早就开始过了。
+        started: !(module && module.noteStarted !== true),
+      })];
+    }
+
+    /** Which note is open. Falls back to the first when the pointer is missing or stale. */
+    function activeNoteDocId(module, docs) {
+      const list = docs || noteDocsOf(module);
+      const wanted = module && typeof module.activeNoteId === 'string' ? module.activeNoteId : '';
+      if (wanted && list.some((doc) => doc.id === wanted)) return wanted;
+      return list[0] ? list[0].id : '';
+    }
+
+    /**
+     * The name a note shows in the history. Derived from its centre node unless the note was
+     * given an explicit name — so renaming the centre card in the canvas renames the note in the
+     * list, which is what a reader expects and costs no extra state.
+     */
+    function noteDocLabel(doc, t) {
+      const explicit = doc && typeof doc.name === 'string' ? doc.name.trim() : '';
+      if (explicit) return explicit;
+      const title = doc && doc.root && typeof doc.root.title === 'string' ? doc.root.title.trim() : '';
+      return title || t.noteNoteUntitled;
+    }
+
+    /** A brand new note: a fresh centre node, named by the reader (or left to the fallback). */
+    function makeNoteDoc(name) {
+      const root = defaultNoteRoot();
+      if (name) root.title = name;
+      // `started: true` on purpose. This note exists because the reader pressed 新建笔记, so the
+      // "click the empty canvas to begin" explainer would be advice they have already taken.
+      return normalizeNoteDoc({
+        name: typeof name === 'string' ? name : '', root, created: Date.now(), started: true,
+      });
+    }
+
+    /**
+     * How old a note is, in one short label.
+     *
+     * Written out by hand rather than via `Intl.RelativeTimeFormat` for the same reason the rest
+     * of this file formats dates by hand: the units differ between the two languages, and a
+     * formatter that is missing in a wrapped environment would take the whole rail down.
+     */
+    function noteDocAge(created, t) {
+      const then = Number(created);
+      if (!isFinite(then) || then <= 0) return '';
+      const minutes = Math.floor((Date.now() - then) / 60000);
+      if (minutes < 1) return t.noteJustNow;
+      if (minutes < 60) return minutes + t.noteMinAgo;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours + t.noteHourAgo;
+      const days = Math.floor(hours / 24);
+      if (days < 30) return days + t.noteDayAgo;
+      const date = new Date(then);
+      const pad = (value) => (value < 10 ? '0' + value : String(value));
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    }
+
+    /** Everything the note list needs to draw one row, so the view stays declarative. */    function noteDocMeta(doc) {
+      let nodes = 0;
+      let images = 0;
+      walkNotes(doc.root, 0, (note) => {
+        nodes += 1;
+        if (note.imageKey) images += 1;
+      });
+      return { nodes, images, created: doc.created };
     }
 
     function noteStyleOf(module) {
@@ -8008,6 +8188,7 @@ window.__ModuleLoader__.load({
     const NOTE_GAP_ROW = 12;  // extra room between the uniform rows of 树形图
     const NOTE_AXIS_OFF = 30; // distance from the timeline axis to the first event card
     const NOTE_RIB = 96;      // fishbone rib: 96 across and 96 up, i.e. exactly 45°
+    const NOTE_SUB_INDENT = 22; // lateral indent of one sub-level on a 时间轴 / 鱼骨 branch
     const NOTE_PAD = 56;      // margin baked into every layout, for the selection ring
 
     /** Children that take part in a layout: a collapsed node hides its whole subtree. */
@@ -8229,25 +8410,63 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Stack a node's children away from a structure's axis (时间轴 sub-notes, 鱼骨图 spurs).
+     * Lay one child and its whole subtree away from a structure's axis (时间轴 sub-notes,
+     * 鱼骨图 spurs).
      *
      * `dir` is -1 to grow upwards and +1 to grow downwards; each level indents a little, so a
      * stack reads as one chain of thought instead of a column of unrelated cards.
+     *
+     * This builds a **self-contained** subtree and returns it, rather than pushing into the
+     * shared arrays. That shape is what lets a caller pack sibling chains without collisions:
+     * the old version walked a node's children starting at `at.y` with a fixed indent, so a
+     * grandchild landed on its uncle's card whenever a node had both a sibling and a child.
+     * Measured on a depth-3 tree it produced fully identical rectangles (`n4` and `n6` came out
+     * as the same box), which is the reported 时间轴/鱼骨图 bug.
+     *
+     * Two passes, because a sibling's lateral room depends on how deep its own chain goes:
+     * widths are measured bottom-up first, then positions are placed top-down using them.
      */
-    function stackAwayFromAxis(out, node, depth, at, dir) {
-      const kids = noteVisibleChildren(node);
-      let edge = dir < 0 ? at.y - 12 : at.y + at.h + 12;
-      for (const kid of kids) {
-        const box = noteCardBox(kid, depth + 1);
-        const placed = {
-          id: kid.id, depth: depth + 1, x: at.x + 22,
-          y: dir < 0 ? edge - box.h : edge, w: box.w, h: box.h,
-        };
-        out.nodes.push(placed);
-        out.edges.push({ from: at.id, to: kid.id, kind: 'stack', side: dir < 0 ? 'a' : 'b' });
-        stackAwayFromAxis(out, kid, depth + 1, placed, dir);
-        edge = dir < 0 ? placed.y - 12 : placed.y + placed.h + 12;
-      }
+    function noteAxisSubtree(node, depth, x, y, dir) {
+      const widthOf = new Map();
+      const measure = (walk) => {
+        const box = noteCardBox(walk, depth);
+        let width = box.w;
+        for (const kid of noteVisibleChildren(walk)) {
+          width = Math.max(width, NOTE_SUB_INDENT + measure(kid));
+        }
+        widthOf.set(walk, width);
+        return width;
+      };
+      measure(node);
+
+      const nodes = [];
+      const edges = [];
+      const place = (walk, walkDepth, x0, y0) => {
+        const box = noteCardBox(walk, walkDepth);
+        nodes.push({ id: walk.id, depth: walkDepth, x: x0, y: y0, w: box.w, h: box.h });
+        // Children stack along the axis from this card; each one starts after its predecessor's
+        // whole chain, which is what keeps a deep chain from landing on the next sibling.
+        let cursor = y0;
+        for (const kid of noteVisibleChildren(walk)) {
+          const kidHeight = noteCardBox(kid, walkDepth + 1).h;
+          const childY = dir < 0 ? cursor - kidHeight - NOTE_GAP_Y : cursor + NOTE_GAP_Y;
+          const childX = x0 + NOTE_SUB_INDENT;
+          place(kid, walkDepth + 1, childX, childY);
+          edges.push({ from: walk.id, to: kid.id, kind: 'stack', side: dir < 0 ? 'a' : 'b' });
+          const placed = nodes[nodes.length - 1];
+          cursor = dir < 0 ? placed.y : placed.y + placed.h;
+        }
+      };
+      place(node, depth, x, y);
+      const minY = Math.min(...nodes.map((item) => item.y));
+      const maxY = Math.max(...nodes.map((item) => item.y + item.h));
+      return { nodes, edges, width: widthOf.get(node) || 0, minY, maxY };
+    }
+
+    /** Append a {@link noteAxisSubtree} result into a layout's arrays. */
+    function appendAxisSubtree(out, sub) {
+      for (const node of sub.nodes) out.nodes.push(node);
+      for (const edge of sub.edges) out.edges.push(edge);
     }
 
     /**
@@ -8271,18 +8490,13 @@ window.__ModuleLoader__.load({
           id: kid.id, depth: 1, x: cx - box.w / 2,
           y: dir * (NOTE_AXIS_OFF + box.h / 2) - box.h / 2, w: box.w, h: box.h,
         };
-        out.nodes.push(at);
+        // The event card and its sub-notes are placed by ONE call, so the card is never emitted
+        // twice and its chain reserves the column it needs.
         out.edges.push({ from: root.id, to: kid.id, kind: 'none' });
         out.guides.push({ kind: 'tick', x1: cx, y1: 0, x2: cx, y2: dir * NOTE_AXIS_OFF, dir });
-        const before = out.nodes.length;
-        stackAwayFromAxis(out, kid, 1, at, dir);
-        // The column belongs to the widest thing in the stack, so a deep side can never run
-        // into the next event.
-        let width = box.w;
-        for (let index2 = before; index2 < out.nodes.length; index2 += 1) {
-          width = Math.max(width, (out.nodes[index2].x - at.x) + out.nodes[index2].w);
-        }
-        cursor += width + 46;
+        const sub = noteAxisSubtree(kid, 1, at.x, at.y, dir);
+        appendAxisSubtree(out, sub);
+        cursor += Math.max(box.w, NOTE_SUB_INDENT + sub.width) + 46;
       });
       let right = 0;
       for (const node of out.nodes) right = Math.max(right, node.x + node.w);
@@ -8312,12 +8526,13 @@ window.__ModuleLoader__.load({
         const cx = attach - NOTE_RIB;
         const centreY = dir * (NOTE_RIB + box.h / 2);
         const at = { id: kid.id, depth: 1, x: cx - box.w / 2, y: centreY - box.h / 2, w: box.w, h: box.h };
-        out.nodes.push(at);
         out.edges.push({ from: root.id, to: kid.id, kind: 'rib', side: dir < 0 ? 'a' : 'b' });
         // The bone ends on the near edge of the card: 96 across and 96 up from the spine, so a
         // rib is always exactly 45° regardless of how tall the cause's own card is.
         out.guides.push({ kind: 'rib', x1: attach, y1: 0, x2: cx, y2: centreY - (dir * box.h) / 2, dir });
-        stackAwayFromAxis(out, kid, 1, at, dir);
+        // The cause and its spurs are placed by one call (see noteAxisSubtree), so the card is
+        // emitted exactly once and its chain reserves the room it needs.
+        appendAxisSubtree(out, noteAxisSubtree(kid, 1, at.x, at.y, dir));
       });
       return out;
     }
@@ -8787,9 +9002,127 @@ window.__ModuleLoader__.load({
      * browser already knows how to handle, a picture is an <img> the browser already knows how to
      * decode, and every claim about the map is inspectable. The wires are the only SVG.
      */
+    /**
+     * 左栏：笔记历史。
+     *
+     * One row per note in the module, newest first, with the open one marked. This replaced the
+     * node tree that used to live here: the tree is already the picture in the middle, so a second
+     * outline of it said nothing new, while "which notes do I have" had nowhere to be asked.
+     *
+     * A row carries the things you cannot see from the canvas: how big the note is, whether it
+     * holds pictures, and when it was made. Delete is on the context menu (右键) rather than a
+     * hover button, so a stray click cannot destroy a note.
+     */
+    function NoteHistory({ t, docs, activeId, onOpen, onDelete, onCreate, onExport }) {
+      const [menu, setMenu] = useState(null);
+      const [naming, setNaming] = useState(false);
+      const [draft, setDraft] = useState('');
+      const [notice, setNotice] = useState('');
+
+      const rows = docs.slice().sort((left, right) => right.created - left.created);
+      const commitName = () => {
+        const name = draft.trim();
+        setNaming(false);
+        setDraft('');
+        onCreate(name);
+      };
+      const askDelete = (doc) => {
+        if (docs.length <= 1) {
+          setNotice(t.noteNoteLastOne);
+          setMenu(null);
+          return;
+        }
+        setNotice(t.noteNoteDeleted + ' · ' + noteDocLabel(doc, t));
+        onDelete(doc.id);
+        setMenu(null);
+      };
+
+      return h('div', { className: 'wsb-glass wsb-noteRail wsb-noteHistory', 'data-note-history': '1' },
+        h(PaneHead, { title: t.noteHistory, sub: docs.length + '' }),
+        h('div', { className: 'wsb-body' },
+          h('button', {
+            type: 'button', className: 'wsb-btn wsb-noteNewNote', 'data-note-new-note': '1',
+            title: t.noteNewHint, onClick: () => { setNaming(true); setDraft('') },
+          }, '+ ' + t.noteNewNote),
+          naming
+            ? h('div', { className: 'wsb-noteNameRow' },
+              h('input', {
+                className: 'wsb-input', 'data-note-name-input': '1', value: draft,
+                placeholder: t.noteNoteUntitled, 'aria-label': t.noteNewNote, autoFocus: true,
+                onChange: (event) => setDraft(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') { event.preventDefault(); commitName() }
+                  if (event.key === 'Escape') { event.preventDefault(); setNaming(false); setDraft('') }
+                },
+              }),
+              h('button', {
+                type: 'button', className: 'wsb-btn', 'data-note-name-ok': '1', onClick: commitName,
+              }, t.noteAdd),
+              h('button', {
+                type: 'button', className: 'wsb-btn', 'data-note-name-cancel': '1',
+                onClick: () => { setNaming(false); setDraft('') },
+              }, t.cancel))
+            : null,
+          h('div', { className: 'wsb-noteRows wsb-noteDocRows', 'data-note-doc-rows': '1' },
+            rows.length
+              ? rows.map((doc, index) => {
+                const meta = noteDocMeta(doc);
+                const open = doc.id === activeId;
+                return h('button', {
+                  key: doc.id, type: 'button', className: 'wsb-noteDoc', 'data-note-doc': doc.id,
+                  'data-open': open ? 'true' : 'false', style: { '--wsb-i': String(index) },
+                  title: t.noteNoteDeleteHint,
+                  onClick: () => onOpen(doc.id),
+                  onContextMenu: (event) => {
+                    event.preventDefault();
+                    setMenu({ id: doc.id, x: event.clientX, y: event.clientY });
+                  },
+                },
+                  h('span', { className: 'wsb-noteDocDot', 'aria-hidden': 'true' }),
+                  h('span', { className: 'wsb-noteDocMain' },
+                    h('span', { className: 'wsb-noteDocName', 'data-note-doc-name': doc.id },
+                      noteDocLabel(doc, t)),
+                    h('span', { className: 'wsb-noteDocMeta' },
+                      meta.nodes + ' ' + t.noteNodes,
+                      meta.images ? ' · ' + meta.images + ' ' + t.noteImages : '',
+                      ' · ' + noteDocAge(doc.created, t))));
+              })
+              : h('div', { className: 'wsb-noteEmptyMini' }, t.noteHistoryEmpty)),
+          notice ? h('div', { className: 'wsb-noteNotice', 'data-note-notice': '1' }, notice) : null,
+          h('div', { className: 'wsb-noteHistFoot' },
+            h('span', null, t.noteNoteSaved),
+            h('button', {
+              type: 'button', className: 'wsb-noteLinkBtn', 'data-note-history-export': '1',
+              onClick: onExport,
+            }, t.noteFile))),
+        menu
+          ? h('div', {
+            className: 'wsb-noteMenu', 'data-note-doc-menu': menu.id,
+            style: { left: (menu.x || 0) + 'px', top: (menu.y || 0) + 'px' },
+          },
+            h('button', {
+              type: 'button', className: 'wsb-noteMenuItem', 'data-tone': 'danger',
+              'data-note-doc-del': menu.id, onClick: () => askDelete(rows.find((doc) => doc.id === menu.id) || rows[0]),
+            }, t.noteNoteDelete),
+            h('button', {
+              type: 'button', className: 'wsb-noteMenuItem', 'data-note-doc-close': '1',
+              onClick: () => setMenu(null),
+            }, t.cancel))
+          : null,
+        menu ? h('div', { className: 'wsb-noteMenuMask', onClick: () => setMenu(null) }) : null);
+    }
+
     function NotebookView({ t, module, patchModule, appearance, onBack, anim, screenStyle, onAnimEnd }) {
       const style = noteStyleOf(module);
-      const root = useMemo(() => noteTreeOf(module), [module]);
+      // The note stack (migrated on read) and which note is open. `root` stays the single source
+      // the rest of this component reads, so every existing call site keeps working.
+      const docs = useMemo(() => noteDocsOf(module), [module]);
+      const activeId = useMemo(() => activeNoteDocId(module, docs), [module, docs]);
+      const activeDoc = useMemo(
+        () => docs.find((doc) => doc.id === activeId) || docs[0] || null,
+        [docs, activeId],
+      );
+      const root = useMemo(() => (activeDoc ? activeDoc.root : defaultNoteRoot()), [activeDoc]);
       const view0 = useMemo(() => noteViewOf(module), [module]);
       const theme = NOTE_THEMES[style.theme];
       const [selectedId, setSelectedId] = useState(root.id);
@@ -8828,7 +9161,27 @@ window.__ModuleLoader__.load({
       const selectedAt = layout.byId[selectedId] || null;
       // 一张还没开始的图：只剩那个空的中心节点。右键空白处新建的第一个节点就是它 ——
       // 「新建 → 空画布 → 右键建第一个节点（它成为根）→ 右键根节点建子节点」。
-      const blank = module.noteStarted !== true && !root.title && !root.children.length && !root.imageKey;
+      /**
+       * Mark the **open note** as started, so the blank-canvas explainer does not come back.
+       *
+       * This used to write a module-level flag, which breaks once a module can hold several notes:
+       * a second, empty note found the flag already set and skipped the explainer, and there was
+       * no way to say "note A has begun, note B has not".
+       */
+      const markNoteStarted = useCallback(() => {
+        patchModule(module.id, (target) => {
+          const stack = noteDocsOf(target);
+          const wanted = activeNoteDocId(target, stack);
+          const doc = stack.find((item) => item.id === wanted) || stack[0];
+          if (!doc) return;
+          doc.started = true;
+          target.noteDocs = stack;
+          target.activeNoteId = doc.id;
+          target.noteRoot = doc.root;
+        });
+      }, [patchModule, module.id]);
+
+      const blank = !(activeDoc && activeDoc.started === true) && !root.title && !root.children.length && !root.imageKey;
 
       /**
        * A node's rect in world space, including everything that moves it: its saved drag offset
@@ -8865,9 +9218,20 @@ window.__ModuleLoader__.load({
           setHistVer((value) => value + 1);
         }
         patchModule(module.id, (target) => {
-          const base = noteTreeOf(target);
-          mutate(base);
-          target.noteRoot = base;
+          const stack = noteDocsOf(target);
+          const wanted = activeNoteDocId(target, stack);
+          const doc = stack.find((item) => item.id === wanted) || stack[0];
+          if (!doc) return;
+          // Mutate the **stored** tree in place, then repair it. Normalising into a copy first and
+          // writing that back would work too, but it re-generates ids for any node that lost one
+          // and breaks every reference the caller still holds (`findNote` lookups, `parent`).
+          mutate(doc.root);
+          doc.root = normalizeNoteNode(doc.root);
+          target.noteDocs = stack;
+          target.activeNoteId = doc.id;
+          // Keep the legacy single-tree field pointing at the open note: 导出/打开/新建 still read
+          // it, and a reader who downgrades should find their current map where they left it.
+          target.noteRoot = doc.root;
         });
       }, [patchModule, module.id, root]);
 
@@ -8901,25 +9265,35 @@ window.__ModuleLoader__.load({
       }, []);
 
       // The wheel has to be a real listener: React's own onWheel is passive, so calling
-      // preventDefault there (needed for Ctrl+wheel zoom) only prints a warning.
+      // preventDefault there (needed to keep the page from scrolling under us) only warns.
+      //
+      // The mapping is the one a drawing tool uses: the **wheel zooms** (that is the gesture
+      // people reach for when they want to see more or less of a map), and Ctrl/Cmd + wheel
+      // moves the canvas sideways/up, which is what a trackpad's two-finger swipe produces
+      // naturally. The previous version had these two swapped.
       useEffect(() => {
         const host = canvasRef.current;
         if (!host || typeof host.addEventListener !== 'function') return undefined;
         const onWheel = (event) => {
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            const rect = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
-            const cx = event.clientX - ((rect && rect.left) || 0);
-            const cy = event.clientY - ((rect && rect.top) || 0);
-            setPan((value) => {
-              const zoom = clamp(value.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12), NOTE_ZOOM_MIN, NOTE_ZOOM_MAX);
-              const k = zoom / value.zoom;
-              return { zoom, x: cx - k * (cx - value.x), y: cy - k * (cy - value.y) };
-            });
-            return;
-          }
           event.preventDefault();
-          setPan((value) => ({ ...value, x: value.x - event.deltaX, y: value.y - event.deltaY }));
+          const rect = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
+          const cx = event.clientX - ((rect && rect.left) || 0);
+          const cy = event.clientY - ((rect && rect.top) || 0);
+          setPan((value) => {
+            if (event.ctrlKey || event.metaKey) {
+              // Pan. deltaX is the horizontal intent when a trackpad sends one; deltaY is the
+              // fallback so a plain Ctrl+wheel on a mouse still does something useful.
+              return {
+                ...value,
+                x: value.x - (event.deltaX || 0),
+                y: value.y - (event.deltaY || 0),
+              };
+            }
+            const zoom = clamp(value.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12), NOTE_ZOOM_MIN, NOTE_ZOOM_MAX);
+            const k = zoom / value.zoom;
+            // Zoom around the pointer, not the corner: the card under the cursor stays put.
+            return { zoom, x: cx - k * (cx - value.x), y: cy - k * (cy - value.y) };
+          });
         };
         host.addEventListener('wheel', onWheel, { passive: false });
         return () => host.removeEventListener('wheel', onWheel);
@@ -9037,7 +9411,14 @@ window.__ModuleLoader__.load({
         const doomed = findNote(root, id);
         if (doomed) walkNotes(doomed, 0, (note) => { if (note.imageKey) mediaRemove(note.imageKey) });
         const parent = noteParentOf(root, id);
-        patchTree((base) => { removeNote(base, id) }, true);
+        // The splice is written out here rather than routed through the module-level `removeNote`:
+        // the two are the same four lines, and doing it locally keeps the delete path independent
+        // of a helper declared a few thousand lines away in a different region of the file.
+        patchTree((base) => {
+          if (!base || !Array.isArray(base.children)) return;
+          const at = base.children.findIndex((child) => child.id === id);
+          if (at >= 0) base.children.splice(at, 1);
+        }, true);
         setEditingId(null);
         setSelectedId(parent ? parent.id : root.id);
       }, [patchTree, root]);
@@ -9081,12 +9462,87 @@ window.__ModuleLoader__.load({
         patchTree((base) => { walkNotes(base, 0, (note) => { note.ox = 0; note.oy = 0 }) }, true);
       }, [patchTree]);
 
+      /**
+       * Undo/redo write into the note that is open, and only that note.
+       *
+       * Replacing the *document list* here would be wrong: the snapshots are single trees, so
+       * restoring one into a stack would silently reset which note is open and drop the others.
+       */
       const applySnapshot = useCallback((text) => {
         const tree = safe(() => JSON.parse(text), null);
         if (!tree) return;
         setEditingId(null);
-        patchModule(module.id, (target) => { target.noteRoot = tree });
+        patchModule(module.id, (target) => {
+          const stack = noteDocsOf(target);
+          const wanted = activeNoteDocId(target, stack);
+          const doc = stack.find((item) => item.id === wanted) || stack[0];
+          if (!doc) return;
+          doc.root = normalizeNoteNode(tree);
+          target.noteDocs = stack;
+          target.activeNoteId = doc.id;
+          target.noteRoot = doc.root;
+        });
       }, [patchModule, module.id]);
+
+      /** 新建笔记: append a note and open it. Undoable, because losing your place is not. */
+      const createNote = useCallback((name) => {
+        const history = historyRef.current;
+        history.past.push(JSON.stringify(root));
+        if (history.past.length > NOTE_HISTORY) history.past.shift();
+        history.future.length = 0;
+        setHistVer((value) => value + 1);
+        const fresh = makeNoteDoc(name);
+        patchModule(module.id, (target) => {
+          const stack = noteDocsOf(target);
+          stack.push(fresh);
+          target.noteDocs = stack;
+          target.activeNoteId = fresh.id;
+          target.noteRoot = fresh.root;
+        });
+        setSelectedId(fresh.root.id);
+        setEditingId(null);
+      }, [patchModule, module.id, root]);
+
+      /** Click a note in the history: remember where the old one was and open the new one. */
+      const openNote = useCallback((id) => {
+        if (id === activeId) return;
+        setSelectedId('');
+        setEditingId(null);
+        patchModule(module.id, (target) => {
+          const stack = noteDocsOf(target);
+          const doc = stack.find((item) => item.id === id);
+          if (!doc) return;
+          target.noteDocs = stack;
+          target.activeNoteId = doc.id;
+          target.noteRoot = doc.root;
+        });
+        // A different note is a different picture, so the camera is refitted on the next paint
+        // rather than left where the previous note happened to be scrolled.
+        setReady(false);
+        setPan((value) => Object.assign({}, value, { x: 0, y: 0 }));
+      }, [patchModule, module.id, activeId]);
+
+      /** 右键删除. The last note is refused: an empty history has nothing to click. */
+      const removeNote = useCallback((id) => {
+        if (docs.length <= 1) return false;
+        const index = docs.findIndex((doc) => doc.id === id);
+        if (index < 0) return false;
+        // Land on the neighbour the reader was most likely looking at.
+        const next = docs[index + 1] || docs[index - 1] || docs[0];
+        patchModule(module.id, (target) => {
+          const stack = noteDocsOf(target).filter((doc) => doc.id !== id);
+          const landing = stack.find((doc) => doc.id === (next ? next.id : '')) || stack[0];
+          target.noteDocs = stack;
+          target.activeNoteId = landing ? landing.id : '';
+          target.noteRoot = landing ? landing.root : defaultNoteRoot();
+        });
+        if (id === activeId) {
+          setSelectedId('');
+          setEditingId(null);
+          setReady(false);
+        }
+        return true;
+      }, [patchModule, module.id, docs, activeId]);
 
       const undo = useCallback(() => {
         const history = historyRef.current;
@@ -9458,7 +9914,7 @@ window.__ModuleLoader__.load({
             }
           }
         }, true);
-        patchModule(module.id, (target) => { target.noteStarted = true });
+        markNoteStarted();
         setMenu(null);
         setSelectedId(node.id);
         setEditingId(node.id);
@@ -9467,7 +9923,7 @@ window.__ModuleLoader__.load({
 
       /** 空画布上的第一个节点：就是那个空的中心节点，直接开始编辑。 */
       const startRoot = useCallback(() => {
-        patchModule(module.id, (target) => { target.noteStarted = true });
+        markNoteStarted();
         setMenu(null);
         setSelectedId(root.id);
         originalRef.current = root.title || '';
@@ -9490,7 +9946,7 @@ window.__ModuleLoader__.load({
           base.oy = 0;
           base.children = [];
         }, true);
-        patchModule(module.id, (target) => { target.noteStarted = true });
+        markNoteStarted();
         setNewOpen(false);
         setNewName('');
         setEditingId(null);
@@ -9673,22 +10129,10 @@ window.__ModuleLoader__.load({
             'data-note-inspector-on': inspector ? 'true' : 'false',
           },
             outline
-              ? h('div', { className: 'wsb-glass wsb-noteRail wsb-noteOutline' },
-                h(PaneHead, { title: t.noteOutline, sub: totals.nodes + '' }),
-                h('div', { className: 'wsb-body' },
-                  h('button', {
-                    type: 'button', className: 'wsb-btn', style: { width: '100%', marginBottom: '8px' },
-                    'data-note-new': '1', onClick: () => addChild(root.id),
-                  }, '+ ' + t.noteAdd),
-                  h('div', { className: 'wsb-noteRows', 'data-note-rows': '1' },
-                    h(NoteOutlineRow, {
-                      node: root, depth: 0, selectedId, t,
-                      onSelect: setSelectedId,
-                      onEdit: startEdit,
-                      onAdd: addChild,
-                      onDelete: removeNode,
-                      onToggle: toggleCollapse,
-                    }))))
+              ? h(NoteHistory, {
+                t, docs, activeId, onOpen: openNote, onDelete: removeNote, onCreate: createNote,
+                onExport: () => setExportOpen(true),
+              })
               : null,
             h('div', { className: 'wsb-noteCanvasWrap' },
               h('div', {
