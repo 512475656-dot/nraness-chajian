@@ -13,6 +13,8 @@
     ".": "./index.js",
     "./client": "./client.js",
     "./news": "./news.js",
+    "./stocks": "./stocks.js",
+    "./net": "./net.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
@@ -20,6 +22,8 @@
     "index.js",
     "client.js",
     "news.js",
+    "stocks.js",
+    "net.js",
     "cordis.patch.yml",
     "icon.svg",
     "locale/*.json",
@@ -29,7 +33,8 @@
   "scripts": {
     "check": "node test/render-check.cjs && node test/host-route-check.cjs",
     "preview": "node test/preview-news.mjs",
-    "preview:notes": "node test/preview-notes.mjs"
+    "preview:stock": "node test/preview-stock.mjs",
+    "preview:notebook": "node test/preview-notebook.mjs"
   },
   "dsh": {
     "bundle": {
