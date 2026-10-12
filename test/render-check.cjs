@@ -3457,27 +3457,16 @@ async function main() {
   const noteDocsStored = () => noteModule().noteDocs || null;
 
   /**
-   * Add a child through the card's own + button.
+   * Add a child to a card.
    *
-   * It is a pointer gesture, not a click: press starts the Blender-style link drag and release
-   * without movement is what means "add a child". So a plain `harness.click` does nothing — the
-   * harness has to press and let go, exactly as the tool expects a reader to.
+   * This used to be the card's own 「+」 button, which was a pointer gesture (press = link drag,
+   * release without movement = add a child). That button is gone from the card, so the harness adds
+   * children the way the UI now does: select the card, press Tab.
    */
   const addChildViaCard = (view, id) => {
-    const canvasEl = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
-    const plus = view.elements.find((element) => element.props['data-note-card-add'] === id);
-    if (!plus) {
-      const cards = runtime.sink.elements
-        .filter((element) => element.props['data-note-card'] !== undefined)
-        .map((element) => element.props['data-note-card']);
-      throw new Error('no + button on card ' + id + '; cards on screen: [' + cards.join(', ') + ']');
-    }
-    plus.props.onPointerDown({
-      button: 0, clientX: 300, clientY: 200, pointerId: 9, stopPropagation() {}, preventDefault() {},
-      currentTarget: { setPointerCapture() {} },
-    });
-    canvasEl().props.onPointerUp();
-    return commitEdit();
+    selectCard(id);
+    const added = press('Tab');
+    return commitEdit() || added;
   };
 
   /**
@@ -3848,18 +3837,12 @@ async function main() {
 
   // 用户点名的三件事：右键建图（第一个节点成为根）、右键根节点建子节点、以及把卡片上的 +
   // 当成 Blender 的连接器（点一下加子节点，拖出去就地长出子节点）。
-  check('右键建图 / 右键建子节点 / 拖 + 当连接器 / 新建并命名', () => {
+  check('右键建图 / 右键建子节点 / 新建并命名', () => {
     const canvas = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
     const menuItemOf = (v, id) => v.elements.find((element) => element.props['data-note-menu-item'] === id);
     const rightClick = (element, x, y) => element.props.onContextMenu({
       preventDefault() {}, stopPropagation() {}, clientX: x, clientY: y,
     });
-    const plusDown = (v, id, x, y) => v.elements.find((element) => element.props['data-note-card-add'] === id)
-      .props.onPointerDown({
-        button: 0, clientX: x, clientY: y, pointerId: 5, stopPropagation() {}, preventDefault() {},
-        currentTarget: { setPointerCapture() {} },
-      });
-
     // ---- 1. 空画布：右键 → 新建中心节点（它就是这个图的根），并且直接进入改名 ----
     let view = openNotebook({ id: 'b0', title: '', body: '', children: [] });
     if (!view.elements.some((element) => element.props['data-note-blank'] !== undefined)) {
@@ -3896,53 +3879,6 @@ async function main() {
     harness.dispatch(runtime, () => childItem.props.onClick());
     view = harness.flush(runtime);
     if (noteTreeStored().children.length !== 1) throw new Error('右键没有建成子节点');
-    view = commitEdit();
-
-    // ---- 3. + 的两种操作：点一下 = 加子节点；拖到空白处 = 在那落点长出子节点（带偏移）----
-    view = openNotebook({ id: 'c0', title: '中心', body: '', children: [] });
-    const rootId = noteTreeStored().id;
-    const childCount = () => noteTreeStored().children.length;
-    harness.dispatch(runtime, () => { plusDown(view, rootId, 120, 120); canvas().props.onPointerUp() });
-    view = commitEdit();
-    if (childCount() !== 1) throw new Error('点一下 + 没有加子节点');
-    // 拖出去：按下 → 移动 → 松手。真实浏览器里每一步之后都会重新渲染，所以这里也要 flush，
-    // 否则 onPointerUp 读到的还是按下那一刻的闭包（link 还是 null）——这是测试的坑，不是功能的坑。
-    harness.dispatch(runtime, () => plusDown(view, rootId, 120, 120));
-    view = harness.flush(runtime);
-    harness.dispatch(runtime, () => canvas().props.onPointerMove({ clientX: 520, clientY: 340 }));
-    view = harness.flush(runtime);
-    harness.dispatch(runtime, () => canvas().props.onPointerUp());
-    view = harness.flush(runtime);
-    if (childCount() !== 2) throw new Error('拖到空白处没有长出子节点');
-    const dropped = noteTreeStored().children[1];
-    if (!dropped.ox && !dropped.oy) throw new Error('落点没有记成偏移 —— 节点会掉回布局位置');
-    view = commitEdit();
-    // 拖到另一张卡片上：成为那张卡片的子节点（在测试里 pan=0/zoom=1，所以世界坐标就是屏幕坐标）。
-    const targetId = noteTreeStored().children[0].id;
-    const targetCard = view.elements.find((element) => element.props['data-note-card'] === targetId);
-    const left = Number.parseFloat(targetCard.props.style.left);
-    const top = Number.parseFloat(targetCard.props.style.top);
-    const width = Number.parseFloat(targetCard.props.style.width);
-    const height = Number.parseFloat(targetCard.props.style.height);
-    // 卡片的 left/top 是世界坐标，而 onPointerMove 收的是屏幕坐标 —— 用世界层的 transform
-    // 反算回去（screen = world × zoom + pan），这样测试不依赖画布有没有 getBoundingClientRect。
-    const worldEl = runtime.sink.elements.find((element) => element.props['data-note-world'] !== undefined);
-    const matrix = /translate\((-?[\d.]+)px,(-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(String(worldEl.props.style.transform));
-    if (!matrix) throw new Error('世界层的 transform 变了，测试要跟着改');
-    const panX = Number(matrix[1]);
-    const panY = Number(matrix[2]);
-    const zoom = Number(matrix[3]);
-    harness.dispatch(runtime, () => plusDown(view, rootId, 120, 120));
-    view = harness.flush(runtime);
-    harness.dispatch(runtime, () => canvas().props.onPointerMove({
-      clientX: (left + width / 2) * zoom + panX, clientY: (top + height / 2) * zoom + panY,
-    }));
-    view = harness.flush(runtime);
-    harness.dispatch(runtime, () => canvas().props.onPointerUp());
-    view = harness.flush(runtime);
-    if (noteById(noteTreeStored(), targetId).children.length !== 1) {
-      throw new Error('把 + 拖到另一张卡片上没有成为它的子节点');
-    }
     view = commitEdit();
 
     // ---- 4. 新建并命名：整张图换成那个名字的中心节点，而且能撤销 ----
@@ -3996,16 +3932,12 @@ async function main() {
     view = press('Enter');
     if (noteTreeStored().children.length !== 2) throw new Error('Enter did not add a sibling');
     view = commitEdit();
-    // A child added from the card's own + button. It is a pointer gesture now — click adds a child,
-    // drag does the Blender-style link — so the harness presses and releases instead of clicking.
-    const canvasEl = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
-    view.elements.find((element) => element.props['data-note-card-add'] === newId).props.onPointerDown({
-      button: 0, clientX: 300, clientY: 200, pointerId: 9, stopPropagation() {}, preventDefault() {},
-      currentTarget: { setPointerCapture() {} },
-    });
-    canvasEl().props.onPointerUp();
+    // A child added to the selected node with Tab. (The card's own «+» button is gone; Tab, the
+    // context menu and the inspector are the entry points now.)
+    view = selectCard(newId);
+    view = press('Tab');
     view = commitEdit();
-    if (noteById(noteTreeStored(), newId).children.length !== 1) throw new Error('the card + button added nothing');
+    if (noteById(noteTreeStored(), newId).children.length !== 1) throw new Error('Tab added no child');
     // Collapsing is one instruction, not two: the branch leaves the map AND the outline, keeps
     // its badge, and the twisty is what brings it back.
     view = selectCard(newId);

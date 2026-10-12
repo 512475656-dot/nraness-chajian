@@ -1271,8 +1271,11 @@ window.__ModuleLoader__.load({
 .wsb-noteCard{position:absolute;display:flex;flex-direction:column;gap:4px;padding:9px 11px;
   box-sizing:border-box;border-radius:12px;overflow:hidden;
   /* 卡面比画布亮一档（layer-2 而不是 layer-1）+ 一道顶边高光：和宿主的面板同一种做法，
-     深色主题下才不会和毛玻璃糊在一起。留一点透（88%）让桌面背景的色温也渗进来。 */
-  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 88%,transparent);
+     深色主题下才不会和毛玻璃糊在一起。
+     这里**几乎不透**（96%）：卡面本来就要承载可读的文字，88% 的时候底下的点阵网格与连线会
+     从卡片里透上来，一张写着字的卡片看起来像浮在网格上的影子。层次交给表面色阶与那道发丝
+     边框（Raycast 的做法），不靠透明度。 */
+  background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 96%,transparent);
   color:var(--dsw-alias-label-primary);
   border:1px solid var(--dsw-alias-border-l1);
   box-shadow:0 12px 24px -18px rgba(0,0,0,.6),
@@ -1309,14 +1312,9 @@ window.__ModuleLoader__.load({
   background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent)}
 .wsb-noteCardBadge{position:absolute;right:6px;top:6px;font-size:9px;line-height:1;padding:3px 5px;
   border-radius:999px;background:color-mix(in srgb,var(--note-accent) 30%,transparent);color:inherit}
-.wsb-noteCardAdd{position:absolute;right:5px;bottom:5px;width:18px;height:18px;padding:0;cursor:pointer;
-  appearance:none;border-radius:50%;font:inherit;font-size:12px;line-height:1;opacity:0;
-  background:color-mix(in srgb,var(--note-accent) 24%,transparent);color:inherit;
-  border:1px solid color-mix(in srgb,var(--note-accent) 48%,transparent);
-  transition:opacity .18s ease,transform .18s ease}
-.wsb-noteCard:hover .wsb-noteCardAdd,.wsb-noteCard[data-sel="true"] .wsb-noteCardAdd{opacity:1}
-.wsb-noteCardAdd:hover{transform:scale(1.14)}
-/* 拉伸角：右下角的斜纹把手。和 + 一样只在悬停/选中时出现，免得每张卡片都挂一个把手。
+/* 卡片右下角的「+」已去掉（它压在卡片内容上）。加子节点仍有三个入口：Tab、右键菜单、
+   检查器里的「加子节点」。 */
+/* 拉伸角：右下角的斜纹把手，只在悬停/选中时出现，免得每张卡片都挂一个把手。
    它压在右下角、比 + 更靠外，所以两者不会抢同一块地方。 */
 .wsb-noteCardGrip{position:absolute;right:1px;bottom:1px;width:14px;height:14px;opacity:0;
   cursor:nwse-resize;touch-action:none;border-bottom-right-radius:11px;
@@ -2474,7 +2472,7 @@ window.__ModuleLoader__.load({
         noteMenuRename: '重命名',
         noteMenuFit: '适应画布',
         noteMenuTidy: '整理',
-        noteLinkHint: '点一下：加子节点并直接命名 · 拖出去：连到别的卡片，或拖到空白处就地长出子节点',
+        noteLinkHint: '拖动卡片可以移动它 · 加子节点用 Tab、右键菜单或检查器',
         // 文件: 本地保存 / 读取 / 通用格式导出
         noteFile: '文件', noteSave: '保存', noteOpen: '打开', noteExport: '导出',
         noteSaveHint: '把整张图存成本地 JSON（含图片）', noteOpenHint: '读入本地文件：JSON / FreeMind(.mm) / OPML / Markdown',
@@ -2722,7 +2720,7 @@ window.__ModuleLoader__.load({
         noteMenuRename: 'Rename',
         noteMenuFit: 'Fit to canvas',
         noteMenuTidy: 'Tidy up',
-        noteLinkHint: 'Click: add a child and name it · Drag out: link to another card, or drop on empty space to grow a child there',
+        noteLinkHint: 'Drag a card to move it · add a child with Tab, the context menu, or the inspector',
         // File: local save / open / interchange export
         noteFile: 'File', noteSave: 'Save', noteOpen: 'Open', noteExport: 'Export',
         noteSaveHint: 'Save the whole map as a local JSON file (pictures included)', noteOpenHint: 'Open a local file: JSON / FreeMind (.mm) / OPML / Markdown',
@@ -10485,13 +10483,6 @@ window.__ModuleLoader__.load({
                       kids && note.collapsed
                         ? h('span', { className: 'wsb-noteCardBadge', 'data-note-card-badge': id }, '+' + kids)
                         : null,
-                      h('button', {
-                        type: 'button', className: 'wsb-noteCardAdd', title: t.noteLinkHint,
-                        'data-note-card-add': id,
-                        // 点一下 = 加一个子节点并开始改名；拖出去 = Blender 式的连线（松手处决定连给谁/长在哪）。
-                        onPointerDown: (event) => onLinkDown(event, note),
-                        onDoubleClick: (event) => event.stopPropagation(),
-                      }, '+'),
                       // 拉伸角。只在悬停或选中时出现，免得每张卡片都挂一个把手。
                       // 它写的是 node.w / node.h —— 那两个字段一旦存在，noteCardBox 就不再按文字
                       // 自动算尺寸（手动尺寸优先），这也正是「拖出自己想要的大小」的办法。
