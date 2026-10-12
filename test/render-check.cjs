@@ -3164,7 +3164,8 @@ async function main() {
   /** Pull the geometry out of the shipped source and run it with the shipped constants. */
   const noteGeometry = (() => {
     const source = noteSource();
-    const names = ['noteVisibleChildren', 'noteCardBox', 'noteSpanV', 'noteSpanH', 'noteLevels',
+    const names = ['noteVisibleChildren', 'noteTextLines', 'noteCardFont', 'noteCardBox', 'noteSpanV',
+      'noteSpanH', 'noteLevels',
       'placeBranch', 'noteCentreNode', 'noteLayoutMind', 'noteLayoutLogic', 'noteLayoutTree',
       'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'chainWidth', 'noteLayoutTimeline',
       'noteLayoutFish', 'noteFinish', 'noteLayoutFor', 'noteWireD', 'walkNotes'];
@@ -3376,6 +3377,36 @@ async function main() {
     }
   });
 
+  check('卡片会随文字变高，也能手动拉伸', () => {
+    const g = noteGeometry;
+    // ---- 自动变高：文字多了，卡片自己长高 ----
+    const short = g.noteCardBox({ title: '题目' }, 1);
+    const long = g.noteCardBox({ title: '题目', body: '这是一段很长的备注，'.repeat(12) }, 1);
+    if (!(long.h > short.h)) {
+      throw new Error('a long note did not grow the card (' + short.h + ' -> ' + long.h + ')');
+    }
+    // 但要有上限：一个巨大的节点不该把整张图挤小。
+    const huge = g.noteCardBox({ title: '题', body: '字'.repeat(4000) }, 1);
+    if (huge.h > 260) throw new Error('the auto height has no cap, got ' + huge.h);
+    // 拉丁文字比同样字符数的中文窄：同一个框里能放更多行才需要变高。
+    const latin = g.noteCardBox({ title: 'T', body: 'word '.repeat(40) }, 1);
+    const cjk = g.noteCardBox({ title: 'T', body: '字'.repeat(200) }, 1);
+    if (!(cjk.h >= latin.h)) throw new Error('CJK text should need at least as many lines as latin');
+    // ---- 手动拉伸：node.w / node.h 优先于自动尺寸 ----
+    const manual = g.noteCardBox({ title: '题', w: 320, h: 200 }, 1);
+    if (manual.w !== 320 || manual.h !== 200) {
+      throw new Error('the manual size was ignored: ' + JSON.stringify(manual));
+    }
+    // 越界要夹住，免得拉出 1px 或者无限大的卡片。
+    const tiny = g.noteCardBox({ w: 1, h: 1 }, 1);
+    if (tiny.w < 96 || tiny.h < 44) throw new Error('a resized card was not clamped: ' + JSON.stringify(tiny));
+    // 图片仍然叠加在（可能已经变高的）文字之上。
+    const withPic = g.noteCardBox({ title: '题', imageKey: 'k', imageHeight: 100 }, 1);
+    if (withPic.h - short.h !== 110) {
+      throw new Error('a picture no longer adds its own height: ' + (withPic.h - short.h));
+    }
+  });
+
   check('a picture changes the card box, and the three wire styles differ', () => {
     const g = noteGeometry;
     const plain = g.noteCardBox({}, 1);
@@ -3467,6 +3498,38 @@ async function main() {
       (element) => element.props[marker] !== undefined));
   };
 
+  check('拉伸角写进 node.w / node.h，而且不再随文字自动变', () => {
+    let view = openNotebook(noteFixture());
+    const id = 'a';
+    const grip = view.elements.find((element) => element.props['data-note-grip'] === id);
+    if (!grip) throw new Error('no resize grip on the card');
+    const before = noteCardEl(view, id).props.style;
+    // 按下 → 移动 → 抬手，走得和真指针一样。
+    grip.props.onPointerDown({
+      button: 0, clientX: 100, clientY: 100, pointerId: 3, stopPropagation() {}, preventDefault() {},
+      currentTarget: { setPointerCapture() {} },
+    });
+    harness.flush(runtime);
+    const canvasEl = () => runtime.sink.elements.find((element) => element.props['data-note-canvas'] !== undefined);
+    canvasEl().props.onPointerMove({ clientX: 260, clientY: 210 });
+    const dragging = harness.flush(runtime);
+    const live = noteCardEl(dragging, id).props.style;
+    if (parseFloat(live.width) <= parseFloat(before.width)) {
+      throw new Error('dragging the grip did not widen the card (' + before.width + ' -> ' + live.width + ')');
+    }
+    canvasEl().props.onPointerUp();
+    view = harness.flush(runtime);
+    const stored = noteById(noteTreeStored(), id);
+    if (!(stored.w > 0) || !(stored.h > 0)) {
+      throw new Error('the resized size was not written to the tree: ' + JSON.stringify([stored.w, stored.h]));
+    }
+    // 一个既有的手动尺寸在重算布局时必须被沿用（否则一改文字卡片就弹回自动尺寸）。
+    const after = noteCardEl(view, id).props.style;
+    if (Math.round(parseFloat(after.width)) !== Math.round(stored.w)) {
+      throw new Error('the card did not keep the manual width: ' + after.width + ' vs ' + stored.w);
+    }
+  });
+
   check('左栏是笔记历史：新建会加一篇，点击会切过去', () => {
     let view = openNotebook(noteFixture());
     // 旧存档（只有 noteRoot）必须先被当成「一篇笔记」，而不是丢掉
@@ -3511,6 +3574,29 @@ async function main() {
     const after = noteDocsStored();
     if (after.length !== 2) throw new Error('switching lost a note');
     if (after[1].root.id !== docs[1].root.id) throw new Error('the second note lost its own tree');
+    // ---- 「新建第二篇之后画布空了」-----------------------------------------------
+    // 真实反馈：新建第二篇之后节点全都看不见了，但左栏说它还有节点（数据没丢，是画布没显示）。
+    // 根因是 openNote / createNote 把 ready 置 false（换图时先藏起来，等相机就位），而"就位"
+    // 只有挂载时那条 effect 负责 —— 挂载早过了，于是 world 永久停在 opacity:0。
+    // 所以每换一次笔记、每新建一篇，都必须重新确认画布是"已就位"的。
+    const assertVisible = (v, where) => {
+      const world = v.elements.find((element) => element.props['data-note-world'] !== undefined);
+      if (!world) throw new Error(where + ': the map world is gone');
+      if (world.props['data-note-ready'] !== 'true') {
+        throw new Error(where + ': the map was left hidden (data-note-ready=' + world.props['data-note-ready'] + ')');
+      }
+      if (String(world.props.style.opacity) !== '1') {
+        throw new Error(where + ': the map is still at opacity ' + world.props.style.opacity);
+      }
+      return world;
+    };
+    // 新建那一步（本用例前面已经做过）之后也必须可见
+    assertVisible(view, 'after creating a second note');
+    // 切到第一篇、再切回第二篇，两次都要可见
+    assertVisible(view, 'after switching back to the first note');
+    view = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => element.props['data-note-doc'] === docs[1].id));
+    assertVisible(view, 'after switching forward again');
   });
 
   check('右键可以删除一篇笔记，但最后一篇删不掉', () => {
@@ -3531,6 +3617,15 @@ async function main() {
     if (docs.length !== 1) throw new Error('删除没有生效，还有 ' + docs.length + ' 篇');
     // 删掉当前打开那篇时，画布要落到邻居上，而不是空白
     if (!noteTreeStored()) throw new Error('deleting the open note left the canvas with no tree');
+    // **而且画布必须真的显示出来**。removeNote 在删掉当前那篇时会把 ready 置 false（等相机重新
+    // 就位），而"就位"只有挂载时那条 effect 负责 —— 挂载早过了。没有「笔记变化」那条 effect 的
+    // 话，world 会永久停在 opacity:0：左栏说还有节点，画布却是空的（真实反馈的第二种触发方式）。
+    const visible = view.elements.find((element) => element.props['data-note-world'] !== undefined);
+    if (!visible) throw new Error('after deleting the open note the map world is gone');
+    if (visible.props['data-note-ready'] !== 'true' || String(visible.props.style.opacity) !== '1') {
+      throw new Error('after deleting the open note the map was left hidden (data-note-ready='
+        + visible.props['data-note-ready'] + ', opacity=' + visible.props.style.opacity + ')');
+    }
 
     // 最后一篇：拒绝并说明原因
     const last = runtime.sink.elements.find((element) => element.props['data-note-doc'] === docs[0].id);

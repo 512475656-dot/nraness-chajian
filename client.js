@@ -1316,6 +1316,14 @@ window.__ModuleLoader__.load({
   transition:opacity .18s ease,transform .18s ease}
 .wsb-noteCard:hover .wsb-noteCardAdd,.wsb-noteCard[data-sel="true"] .wsb-noteCardAdd{opacity:1}
 .wsb-noteCardAdd:hover{transform:scale(1.14)}
+/* 拉伸角：右下角的斜纹把手。和 + 一样只在悬停/选中时出现，免得每张卡片都挂一个把手。
+   它压在右下角、比 + 更靠外，所以两者不会抢同一块地方。 */
+.wsb-noteCardGrip{position:absolute;right:1px;bottom:1px;width:14px;height:14px;opacity:0;
+  cursor:nwse-resize;touch-action:none;border-bottom-right-radius:11px;
+  background:linear-gradient(135deg,transparent 46%,color-mix(in srgb,var(--note-accent) 62%,transparent) 46%);
+  transition:opacity .18s ease}
+.wsb-noteCard:hover .wsb-noteCardGrip,.wsb-noteCard[data-sel="true"] .wsb-noteCardGrip{opacity:.9}
+.wsb-noteCardGrip:hover{opacity:1}
 .wsb-noteEdit{flex:1 1 auto;width:100%;min-height:22px;resize:none;padding:0;border:0;outline:none;
   background:transparent;color:inherit;font:inherit;font-size:12.5px;font-weight:650;line-height:1.35}
 .wsb-noteCard[data-depth="0"] .wsb-noteEdit{font-size:14.5px}
@@ -2431,6 +2439,7 @@ window.__ModuleLoader__.load({
         noteBranchCurve: '曲线', noteBranchElbow: '直角', noteBranchLine: '直线',
         noteThemeClassic: '经典', noteThemeInk: '墨黑', noteThemePaper: '纸白', noteThemeCandy: '糖果',
         noteZoom: '缩放', noteZoomIn: '放大', noteZoomOut: '缩小', noteFit: '适应画布', noteActual: '实际大小',
+        noteResize: '拖拽右下角可以拉伸这张卡片',
         noteUndo: '撤销', noteRedo: '重做', noteTidy: '整理', noteTidyHint: '清除手动拖动的位置，回到结构自动排布',
         noteInsertImage: '插入图片', noteImage: '图片', noteImageClear: '移除图片', noteNoImage: '这个节点还没有图片',
         noteImageFit: '显示方式', noteFitCover: '裁剪填满', noteFitContain: '完整显示', noteImageSize: '图片高度',
@@ -2679,6 +2688,7 @@ window.__ModuleLoader__.load({
         noteBranchCurve: 'Curved', noteBranchElbow: 'Right angle', noteBranchLine: 'Straight',
         noteThemeClassic: 'Classic', noteThemeInk: 'Ink', noteThemePaper: 'Paper', noteThemeCandy: 'Candy',
         noteZoom: 'Zoom', noteZoomIn: 'Zoom in', noteZoomOut: 'Zoom out', noteFit: 'Fit', noteActual: 'Actual size',
+        noteResize: 'Drag the corner to resize this card',
         noteUndo: 'Undo', noteRedo: 'Redo', noteTidy: 'Tidy', noteTidyHint: 'Clear manual drags and let the structure place every card again',
         noteInsertImage: 'Insert picture', noteImage: 'Picture', noteImageClear: 'Remove picture', noteNoImage: 'This node has no picture yet',
         noteImageFit: 'Fit', noteFitCover: 'Crop to fill', noteFitContain: 'Show whole picture', noteImageSize: 'Picture height',
@@ -4114,6 +4124,10 @@ window.__ModuleLoader__.load({
         oy: isFinite(source.oy) ? Number(source.oy) : 0,
         children: [],
       };
+      // 手动拉过的尺寸。**不能丢**：它由 noteCardBox 优先采用，丢了这个字段等于每次 patchTree
+      // 都把读者拉好的卡片弹回自动尺寸（自检里那条「拉伸角写进 node.w / node.h」抓的就是这个）。
+      if (isFinite(source.w)) out.w = clamp(Number(source.w), 96, 640);
+      if (isFinite(source.h)) out.h = clamp(Number(source.h), 44, 900);
       // 手写/压感 ink and the reference-image opacity are v1 fields. The ink tool is gone, but
       // the strokes are the one thing here that cannot be retyped, so they are carried as-is.
       if (Array.isArray(source.strokes)) out.strokes = source.strokes;
@@ -8231,10 +8245,67 @@ window.__ModuleLoader__.load({
      * note without clipping, or the note's descenders get cut off by the card's own edge. The
      * centre is bigger than the first ring, and the first ring bigger than the rest.
      */
+    /**
+     * How many lines a string needs at a given card width.
+     *
+     * This is an estimate, not a measurement — there is no DOM here, and the layout functions are
+     * deliberately pure so the same tree always produces the same picture. It counts **advance
+     * width** per character: CJK and full-width punctuation take about one em, Latin and digits
+     * about half. That is enough to grow a card when someone pastes a paragraph, and it can never
+     * disagree with itself between renders (which a measured value could, and that would make the
+     * map jitter on every keystroke).
+     */
+    function noteTextLines(text, widthPx, fontSizePx) {
+      const raw = typeof text === 'string' ? text : '';
+      if (!raw) return 0;
+      const perLine = Math.max(4, Math.floor(widthPx / Math.max(1, fontSizePx * 0.95)));
+      let lines = 0;
+      for (const paragraph of raw.split('\n')) {
+        let em = 0;
+        for (const ch of paragraph) {
+          const code = ch.codePointAt(0);
+          // CJK / 全角标点 / 假名 / 韩文：一个字符约一个 em；其余（拉丁、数字、半角）约半个。
+          em += (code >= 0x1100 && (code <= 0x115f
+            || (code >= 0x2e80 && code <= 0xa4cf)
+            || (code >= 0xac00 && code <= 0xd7a3)
+            || (code >= 0xf900 && code <= 0xfaff)
+            || (code >= 0xfe30 && code <= 0xfe6f)
+            || (code >= 0xff00 && code <= 0xff60)
+            || (code >= 0xffe0 && code <= 0xffe6))) ? 1 : 0.5;
+        }
+        lines += Math.max(1, Math.ceil(em / perLine));
+      }
+      return lines;
+    }
+
+    /** The typography a card uses at a given depth — the same numbers the CSS uses. */
+    function noteCardFont(depth) {
+      if (depth === 0) return { title: 14.5, body: 10.5, padX: 30, padY: 24 };
+      if (depth === 1) return { title: 12.5, body: 10.5, padX: 22, padY: 18 };
+      return { title: 11.5, body: 10.5, padX: 22, padY: 18 };
+    }
+
+    /**
+     * A card's box. The height **grows with its text** (up to a cap) unless the reader has dragged
+     * the card to a size of their own, in which case that size wins.
+     *
+     * Growing with the text is what stops a pasted paragraph from being silently truncated; the cap
+     * is what stops one enormous node from making every other card in the map tiny when 适应画布
+     * fits it. `node.w`/`node.h` are the manual override, written by the resize handle.
+     */
     function noteCardBox(node, depth) {
       const base = depth === 0 ? { w: 224, h: 86 } : depth === 1 ? { w: 188, h: 66 } : { w: 162, h: 58 };
+      const width = clamp(Number(node && node.w) || base.w, 96, 640);
+      const font = noteCardFont(depth);
+      const textWidth = width - font.padX;
+      // 标题最多两行、正文最多四行 —— 与 CSS 的 line-clamp 呼应（见 .wsb-noteCardTitle/Body）。
+      const titleLines = Math.min(2, noteTextLines(node && node.title, textWidth, font.title));
+      const bodyLines = Math.min(4, noteTextLines(node && node.body, textWidth, font.body));
+      const textH = titleLines * font.title * 1.35 + (bodyLines ? bodyLines * font.body * 1.45 + 4 : 0);
+      const auto = Math.max(base.h, font.padY + textH);
+      const height = clamp(Number(node && node.h) || auto, 44, 900);
       const image = node && node.imageKey ? clamp(Number(node.imageHeight) || 96, 56, 240) : 0;
-      return { w: base.w, h: base.h + (image ? image + 10 : 0) };
+      return { w: width, h: height + (image ? image + 10 : 0) };
     }
 
     /** The vertical band a subtree needs in a left→right structure. */
@@ -9243,7 +9314,11 @@ window.__ModuleLoader__.load({
         const note = findNote(root, id);
         const ox = note && isFinite(note.ox) ? Number(note.ox) : 0;
         const oy = note && isFinite(note.oy) ? Number(note.oy) : 0;
-        const live = liveDrag && liveDrag.ids.indexOf(id) >= 0 ? liveDrag : null;
+        // 拉伸中：尺寸跟着指针走，卡片当场变大变小，抬手才写进存档。
+        if (liveDrag && liveDrag.resize === id) {
+          return Object.assign({}, base, { x: base.x + ox, y: base.y + oy, w: liveDrag.w, h: liveDrag.h });
+        }
+        const live = liveDrag && liveDrag.ids && liveDrag.ids.indexOf(id) >= 0 ? liveDrag : null;
         if (!ox && !oy && !live) return base;
         return Object.assign({}, base, {
           x: base.x + ox + (live ? live.dx : 0),
@@ -9307,6 +9382,28 @@ window.__ModuleLoader__.load({
         return undefined;
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, []);
+
+      /**
+       * 切换笔记时重新取景。
+       *
+       * 这里是上面那个 bug 的正面修法：`openNote` / `createNote` 会把 `ready` 置 false（换图时
+       * 先藏起来，等相机就位再显示），但「就位」原来只由挂载时那条 effect 负责 —— 挂载早过了，
+       * 于是图永久停在 opacity:0（画布看起来空了，数据其实还在）。
+       * 现在只要**当前笔记变了**，就重新取景并把 ready 置回来。
+       *
+       * 空笔记的「起步说明」不在这里管：那是 `blank` / 渲染层的事（见 `data-note-blank`），
+       * 与相机是否就位无关，所以这一条只需要把相机放好。
+       */
+      const shownNoteRef = useRef(activeId);
+      useEffect(() => {
+        if (shownNoteRef.current === activeId) return undefined;
+        shownNoteRef.current = activeId;
+        const size = fitFor(layout.box, canvasRef.current);
+        setPan(size);
+        setReady(true);
+        return undefined;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [activeId]);
 
       // The wheel has to be a real listener: React's own onWheel is passive, so calling
       // preventDefault there (needed to keep the page from scrolling under us) only warns.
@@ -9560,10 +9657,9 @@ window.__ModuleLoader__.load({
           target.activeNoteId = doc.id;
           target.noteRoot = doc.root;
         });
-        // A different note is a different picture, so the camera is refitted on the next paint
-        // rather than left where the previous note happened to be scrolled.
-        setReady(false);
-        setPan((value) => Object.assign({}, value, { x: 0, y: 0 }));
+        // 换一篇笔记 = 换一张图。相机在下面那条「笔记变化」的 effect 里处理，这里不再自己
+        // 把 ready 置 false —— 那条 effect 只在挂载时跑过一次，置 false 之后就没人再置回来，
+        // 整张图会永远停在 opacity:0（「新建第二篇之后画布空了」就是这个）。
       }, [patchModule, module.id, activeId]);
 
       /** 右键删除. The last note is refused: an empty history has nothing to click. */
@@ -9696,6 +9792,15 @@ window.__ModuleLoader__.load({
           setLink((current) => (current ? { from: current.from, x: point.x, y: point.y } : current));
           return;
         }
+        if (gesture.kind === 'resize') {
+          // 预览：直接把新尺寸写进 liveDrag，卡片跟着指针长/缩，抬手才落盘。
+          setLiveDrag({
+            resize: gesture.id,
+            w: clamp(gesture.w0 + dx / pan.zoom, 96, 640),
+            h: clamp(gesture.h0 + dy / pan.zoom, 44, 900),
+          });
+          return;
+        }
         setLiveDrag({ ids: gesture.ids, dx: dx / pan.zoom, dy: dy / pan.zoom });
       };
 
@@ -9720,6 +9825,19 @@ window.__ModuleLoader__.load({
           // 落在空白处 → 就在落点长一个子节点；落在自己身上按空白处理。
           if (hit && hit !== gesture.id) createNodeAt(hit, null, '');
           else createNodeAt(gesture.id, point, '');
+          return;
+        }
+        if (gesture.kind === 'resize') {
+          const liveResize = liveDrag && liveDrag.resize === gesture.id ? liveDrag : null;
+          setLiveDrag(null);
+          if (!liveResize) return;
+          // 手写尺寸落盘：从此这张卡片按这个尺寸画，不再随文字自动变高。
+          patchTree((base) => {
+            const target = findNote(base, gesture.id);
+            if (!target) return;
+            target.w = Math.round(liveResize.w);
+            target.h = Math.round(liveResize.h);
+          }, true);
           return;
         }
         const live = liveDrag;
@@ -10029,6 +10147,31 @@ window.__ModuleLoader__.load({
         setSelectedId(note.id);
         setMenu(null);
         // 捕获落在 + 上：指针事件照旧冒泡到画布（拖拽继续），而 click/dblclick 不会跑到画布上去。
+        safe(() => {
+          const host = event.currentTarget;
+          if (host && typeof host.setPointerCapture === 'function') host.setPointerCapture(event.pointerId);
+        });
+      };
+
+      /**
+       * 拉伸角按下：记下起点与卡片当前尺寸，剩下的交给 pointermove。
+       *
+       * 屏幕位移要除以当前缩放才是世界坐标里的位移 —— 在 50% 下拖 100px，卡片只该长 50px。
+       * 手写尺寸写进 node.w / node.h，`noteCardBox` 会优先用它（见那里的注释）；这也意味着
+       * 一旦手动拉过，这张卡片就不再随文字自动变高 —— 这是刻意的：手动尺寸是更强的意图。
+       */
+      const onResizeDown = (event, note) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const at = rectOf(note.id);
+        const box = noteCardBox(note, at ? at.depth : 1);
+        gestureRef.current = {
+          kind: 'resize', id: note.id, x: event.clientX, y: event.clientY,
+          w0: box.w, h0: box.h,
+        };
+        setSelectedId(note.id);
+        setMenu(null);
         safe(() => {
           const host = event.currentTarget;
           if (host && typeof host.setPointerCapture === 'function') host.setPointerCapture(event.pointerId);
@@ -10348,7 +10491,14 @@ window.__ModuleLoader__.load({
                         // 点一下 = 加一个子节点并开始改名；拖出去 = Blender 式的连线（松手处决定连给谁/长在哪）。
                         onPointerDown: (event) => onLinkDown(event, note),
                         onDoubleClick: (event) => event.stopPropagation(),
-                      }, '+'));
+                      }, '+'),
+                      // 拉伸角。只在悬停或选中时出现，免得每张卡片都挂一个把手。
+                      // 它写的是 node.w / node.h —— 那两个字段一旦存在，noteCardBox 就不再按文字
+                      // 自动算尺寸（手动尺寸优先），这也正是「拖出自己想要的大小」的办法。
+                      h('span', {
+                        className: 'wsb-noteCardGrip', 'data-note-grip': id,
+                        title: t.noteResize, onPointerDown: (event) => onResizeDown(event, note),
+                      }));
                   })),
                 h('div', { className: 'wsb-noteHint', 'data-note-hint': '1' },
                   h('span', { className: 'wsb-noteLevel', 'data-note-level': String(selectedAt ? selectedAt.depth : 0) },

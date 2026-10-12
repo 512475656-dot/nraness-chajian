@@ -272,7 +272,7 @@ function noteGeometryForCamera() {
     }
     return source.slice(at, i + 1);
   };
-  const names = ['noteVisibleChildren', 'noteCardBox', 'noteSpanV', 'noteSpanH', 'noteLevels',
+  const names = ['noteVisibleChildren', 'noteTextLines', 'noteCardFont', 'noteCardBox', 'noteSpanV', 'noteSpanH', 'noteLevels',
     'placeBranch', 'noteCentreNode', 'noteLayoutMind', 'noteLayoutLogic', 'noteLayoutTree',
     'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'chainWidth', 'noteLayoutTimeline',
     'noteLayoutFish', 'noteFinish', 'noteLayoutFor', 'noteWireD', 'walkNotes'];
