@@ -1254,6 +1254,12 @@ window.__ModuleLoader__.load({
 .wsb-noteNewBox>b{font-size:13px;font-weight:650}
 .wsb-noteNewBox>p{margin:0;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
 .wsb-noteNewRow{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+/* 「另存为」：同一个对话框样式，但**垂直居中** —— 它带一组格式勾选，贴在顶部会显得像还没展开。
+   位置只靠这里的 translate 覆盖，不另写一套盒子。 */
+.wsb-noteSaveAs{top:50%;translate:-50% -50%;z-index:22}
+/* 格式多选：一行小分段按钮，选中的那个用 --wsb-c1 点亮（和顶栏的 seg 同一套语言）。 */
+.wsb-noteFormatRow{display:flex;flex-wrap:wrap;gap:6px}
+.wsb-noteSaveAsErr{margin:0;font-size:11px;color:var(--dsw-alias-label-error,#f87171)}
 
 /* 拖动 + 时的临时连线：虚线强调色，一眼看出"正在连"。 */
 .wsb-noteWireLink{stroke:color-mix(in srgb,var(--wsb-c1) 80%,transparent);stroke-width:2;
@@ -2484,6 +2490,10 @@ window.__ModuleLoader__.load({
         // 文件: 本地保存 / 读取 / 通用格式导出
         noteFile: '文件', noteSave: '保存', noteOpen: '打开', noteExport: '导出',
         noteSaveHint: '把整张图存成本地 JSON（含图片）', noteOpenHint: '读入本地文件：JSON / FreeMind(.mm) / OPML / Markdown',
+        noteSaveAs: '另存为', noteSaveAsHint: '换个文件名存一份（可同时存多种格式）',
+        noteSaveAsTitle: '另存为', noteSaveAsNeedName: '请先填一个文件名',
+        noteSaveAsNeedFormat: '至少选一种格式', noteSaveAsGo: '存储',
+        noteSaveAsDone: '已另存 {n} 份：{name}',
         noteExportHint: '导出成别的软件能打开的格式',
         noteExportXmind: 'XMind (.xmind)', noteExportXmindHint: 'XMind 2020+ 直接打开，结构预设一起带过去',
         noteExportMm: 'FreeMind (.mm)', noteExportMmHint: 'XMind / Freeplane / MindManager 都能导入',
@@ -2733,6 +2743,10 @@ window.__ModuleLoader__.load({
         // File: local save / open / interchange export
         noteFile: 'File', noteSave: 'Save', noteOpen: 'Open', noteExport: 'Export',
         noteSaveHint: 'Save the whole map as a local JSON file (pictures included)', noteOpenHint: 'Open a local file: JSON / FreeMind (.mm) / OPML / Markdown',
+        noteSaveAs: 'Save as', noteSaveAsHint: 'Save a copy under another file name (several formats at once)',
+        noteSaveAsTitle: 'Save as', noteSaveAsNeedName: 'Give the copy a file name first',
+        noteSaveAsNeedFormat: 'Pick at least one format', noteSaveAsGo: 'Save',
+        noteSaveAsDone: 'Saved {n} copy/copies as {name}',
         noteExportHint: 'Export a format another app can open',
         noteExportXmind: 'XMind (.xmind)', noteExportXmindHint: 'Opens directly in XMind 2020+, structure preset included',
         noteExportMm: 'FreeMind (.mm)', noteExportMmHint: 'Imports into XMind / Freeplane / MindManager',
@@ -9323,6 +9337,8 @@ window.__ModuleLoader__.load({
       const [menu, setMenu] = useState(null);
       const [newOpen, setNewOpen] = useState(false);
       const [newName, setNewName] = useState('');
+      // 「另存为」：一个对话框 + 一份格式清单。空数组 = 没开着。
+      const [saveAs, setSaveAs] = useState(null);
       const [link, setLink] = useState(null);
       const [, setHistVer] = useState(0);
       const canvasRef = useRef(null);
@@ -9986,9 +10002,17 @@ window.__ModuleLoader__.load({
         return { images, total: keys.length, missing: keys.length - Object.keys(images).length };
       }, [root]);
 
-      const exportAs = useCallback((format) => {
+      /**
+       * 保存 / 导出。
+       *
+       * `saveName` 是「另存为」给出的文件名 —— 它在这一次导出里**压过**笔记自己的名字。
+       * 刻意**不**顺手改笔记名：那是两件事。读者想把当前这张图另存一份叫别的名字，不代表他要
+       * 把正在编辑的这篇也改名。笔记自己的名字仍然可以在检查器里改。
+       */
+      const exportAs = useCallback((format, saveName) => {
         setFileOpen(false);
-        const title = noteSaveName(activeDoc, module.name || t.kindNotebook);
+        const forced = typeof saveName === 'string' ? saveName.trim() : '';
+        const title = forced || noteSaveName(activeDoc, module.name || t.kindNotebook);
         if (format === 'native') {
           collectImages().then(({ images, missing }) => {
             const text = noteToNativeText({
@@ -10098,6 +10122,30 @@ window.__ModuleLoader__.load({
         ['md', t.noteExportMd, t.noteExportMdHint],
         ['native', t.noteExportJson, t.noteExportJsonHint],
       ];
+      // 另存为对话框用的格式清单，顺序和短名都取自同一份 exportItems —— 两处各写一份迟早会漂。
+      const EXPORT_FORMATS = exportItems.map(([id, label]) => [id, label]);
+
+      /**
+       * 「另存为」的确认：把勾上的每种格式按给定文件名各导出一份。
+       *
+       * 一个格式都没勾、或者名字只剩空白，就**留在对话框里说明原因**而不是静默关掉 ——
+       * 静默关掉会让读者以为存成功了。
+       */
+      const confirmSaveAs = () => {
+        const name = String(saveAs && saveAs.name ? saveAs.name : '').trim();
+        if (!name) {
+          setSaveAs((value) => Object.assign({}, value, { error: t.noteSaveAsNeedName }));
+          return;
+        }
+        const formats = (saveAs && saveAs.formats) || [];
+        if (!formats.length) {
+          setSaveAs((value) => Object.assign({}, value, { error: t.noteSaveAsNeedFormat }));
+          return;
+        }
+        setSaveAs(null);
+        for (const format of formats) exportAs(format, name);
+        say(t.noteSaveAsDone.replace('{n}', String(formats.length)).replace('{name}', name));
+      };
 
       //#endregion
 
@@ -10374,6 +10422,19 @@ window.__ModuleLoader__.load({
                       h('b', null, t.noteSave),
                       h('span', null, t.noteSaveHint)),
                     h('button', {
+                      type: 'button', className: 'wsb-noteExportItem', 'data-note-save-as': '1',
+                      // 另存为：换个文件名存一份。**不改**正在编辑的这篇的名字 —— 那是两件事。
+                      onClick: () => {
+                        setFileOpen(false);
+                        setSaveAs({
+                          name: noteSaveName(activeDoc, module.name || t.kindNotebook),
+                          formats: ['native'], error: '',
+                        });
+                      },
+                    },
+                      h('b', null, t.noteSaveAs),
+                      h('span', null, t.noteSaveAsHint)),
+                    h('button', {
                       type: 'button', className: 'wsb-noteExportItem', 'data-note-open': '1',
                       onClick: () => { setFileOpen(false); safe(() => importRef.current && importRef.current.click()) },
                     },
@@ -10601,6 +10662,43 @@ window.__ModuleLoader__.load({
                     menu.id === root.id ? null
                       : menuItem('delete', '⌫', t.noteDelete, () => { setMenu(null); removeNode(menu.id) }, 'Del', 'danger'),
                   ]).filter(Boolean))
+              : null,
+            // 「另存为」对话框。格式是一组可多选的勾选 —— 一张图按不同格式分别存出去是常见
+            // 需求（给 XMind 的同事一份、给自己留一份带图片的 JSON），而每勾一种就是一次下载。
+            saveAs
+              ? h('div', { className: 'wsb-noteNewBox wsb-noteSaveAs', 'data-note-save-as-box': '1' },
+                h('b', null, t.noteSaveAsTitle),
+                h('p', null, t.noteSaveAsHint),
+                h('input', {
+                  className: 'wsb-input', 'data-note-save-as-name': '1', value: saveAs.name,
+                  placeholder: t.noteNewPlaceholder,
+                  onChange: (event) => setSaveAs((value) => Object.assign({}, value, {
+                    name: event.target.value, error: '',
+                  })),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); confirmSaveAs() }
+                    else if (event.key === 'Escape') { event.preventDefault(); setSaveAs(null) }
+                  },
+                }),
+                h('div', { className: 'wsb-noteFormatRow' },
+                  EXPORT_FORMATS.map(([id, label]) => h('button', {
+                    key: id, type: 'button', className: 'wsb-segBtn', 'data-note-save-as-format': id,
+                    'data-on': saveAs.formats.indexOf(id) >= 0 ? 'true' : 'false',
+                    onClick: () => setSaveAs((value) => {
+                      const has = value.formats.indexOf(id) >= 0;
+                      const next = has ? value.formats.filter((item) => item !== id) : value.formats.concat([id]);
+                      return Object.assign({}, value, { formats: next, error: '' });
+                    }),
+                  }, label))),
+                saveAs.error ? h('p', { className: 'wsb-noteSaveAsErr', 'data-note-save-as-err': '1' }, saveAs.error) : null,
+                h('div', { className: 'wsb-noteNewRow' },
+                  h('button', {
+                    type: 'button', className: 'wsb-btn', 'data-note-save-as-cancel': '1',
+                    onClick: () => setSaveAs(null),
+                  }, t.noteNewCancel),
+                  h('button', {
+                    type: 'button', className: 'wsb-btn', 'data-note-save-as-go': '1', onClick: confirmSaveAs,
+                  }, t.noteSaveAsGo)))
               : null,
             newOpen
               ? h('div', { className: 'wsb-noteNewBox', 'data-note-new-box': '1' },

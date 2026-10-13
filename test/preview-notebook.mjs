@@ -371,6 +371,22 @@ if (args.includes('--file')) {
 }
 //#endregion
 
+//#region open the 另存为 dialog for the screenshot (--save-as)
+if (args.includes('--save-as')) {
+  const openMenu = flatten(tree).find((node) => node.props && node.props['data-note-file'] === '1');
+  if (!openMenu) throw new Error('no 文件 button');
+  openMenu.props.onClick({ stopPropagation() {}, preventDefault() {} });
+  tree = render(mainEntry.component, {});
+  const saveAs = flatten(tree).find((node) => node.props && node.props['data-note-save-as'] === '1');
+  if (!saveAs) throw new Error('no 另存为 item in the 文件 menu');
+  saveAs.props.onClick({ stopPropagation() {}, preventDefault() {} });
+  tree = render(mainEntry.component, {});
+  if (!flatten(tree).some((node) => node.props && node.props['data-note-save-as-box'])) {
+    throw new Error('the 另存为 dialog did not open');
+  }
+}
+//#endregion
+
 //#region element tree -> html
 
 const HTML_ATTRS = ['x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'points', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'viewBox', 'opacity', 'title', 'href', 'src', 'alt', 'role', 'value', 'placeholder', 'type', 'min', 'max', 'step', 'disabled', 'aria-label', 'loading', 'target', 'rel'];

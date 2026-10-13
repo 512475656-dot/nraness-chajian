@@ -4458,6 +4458,69 @@ async function main() {
       throw new Error('导出之后文件菜单还开着');
     }
 
+    // ---- 另存为 ----------------------------------------------------------------
+    // 换个文件名存一份，而且**不改**正在编辑的这篇的名字 —— 那是两件事。
+    // 迁移出来的那篇笔记名字就取自中心节点标题，所以这里读树上的标题即可
+    const noteNameBefore = noteTreeStored().title;
+    exports_.downloads.length = 0;
+    exports_.blobs.length = 0;
+    view = clickFile(view, 'data-note-save-as');
+    const box = runtime.sink.elements.find((element) => element.props['data-note-save-as-box'] !== undefined);
+    if (!box) throw new Error('另存为没有打开对话框');
+    const nameInput = runtime.sink.elements.find((element) => element.props['data-note-save-as-name'] !== undefined);
+    if (!nameInput) throw new Error('另存为对话框没有文件名输入框');
+    // 默认值应当是当前这篇的名字，读者一按就能存
+    if (String(nameInput.props.value).trim() !== String(noteNameBefore).trim()) {
+      throw new Error('另存为没有预填当前文件名: ' + JSON.stringify(nameInput.props.value));
+    }
+    // 名字清空 → 拒绝并存着对话框说明原因，而不是静默关掉
+    nameInput.props.onChange({ target: { value: '   ' } });
+    view = harness.flush(runtime);
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-go'] !== undefined));
+    view = harness.flush(runtime);
+    if (!runtime.sink.elements.some((element) => element.props['data-note-save-as-err'] !== undefined)) {
+      throw new Error('空文件名没有被挡下来');
+    }
+    if (!runtime.sink.elements.some((element) => element.props['data-note-save-as-box'] !== undefined)) {
+      throw new Error('空文件名把对话框关掉了（读者会以为存成功了）');
+    }
+    // 一个格式都不勾 → 同样拒绝
+    const nameInput2 = runtime.sink.elements.find((element) => element.props['data-note-save-as-name'] !== undefined);
+    nameInput2.props.onChange({ target: { value: '另存的副本' } });
+    view = harness.flush(runtime);
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-format'] === 'native'));
+    view = harness.flush(runtime);
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-go'] !== undefined));
+    view = harness.flush(runtime);
+    if (!runtime.sink.elements.some((element) => element.props['data-note-save-as-err'] !== undefined)) {
+      throw new Error('一个格式都没勾也没有被挡下来');
+    }
+    // 勾两种格式 → 两次下载，文件名都用输入的那个
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-format'] === 'native'));
+    view = harness.flush(runtime);
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-format'] === 'mm'));
+    view = harness.flush(runtime);
+    harness.dispatch(runtime, () => harness.click(runtime, (element) => element.props['data-note-save-as-go'] !== undefined));
+    for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => { setTimeout(resolve, 4) });
+    view = harness.flush(runtime);
+    if (exports_.downloads.length !== 2) {
+      throw new Error('勾两种格式没有产生两次下载，实际 ' + exports_.downloads.length
+        + '：' + JSON.stringify(exports_.downloads));
+    }
+    for (const file of exports_.downloads) {
+      if (file.indexOf('另存的副本') !== 0) throw new Error('另存为没有用输入的文件名: ' + file);
+    }
+    if (!exports_.downloads.some((file) => /\.json$/.test(file)) || !exports_.downloads.some((file) => /\.mm$/.test(file))) {
+      throw new Error('另存为的两种格式没有各自的扩展名: ' + JSON.stringify(exports_.downloads));
+    }
+    // **这篇笔记自己的名字不许被改动** —— 另存为不是重命名。
+    if (noteTreeStored().title !== noteNameBefore) {
+      throw new Error('另存为把笔记改名了: ' + noteNameBefore + ' -> ' + noteTreeStored().title);
+    }
+    if (runtime.sink.elements.some((element) => element.props['data-note-save-as-box'] !== undefined)) {
+      throw new Error('另存为成功之后对话框没有关上');
+    }
+
     // 保存：原生 JSON，图片以 data URL 写进文件（FileReader 由 harness 打桩）。
     exports_.blobs.length = 0;
     exports_.downloads.length = 0;
