@@ -4195,17 +4195,29 @@ window.__ModuleLoader__.load({
      *
      * Returns one entry for a module that predates the stack, built from its `noteRoot`, so the
      * reader's existing map becomes the first note of the history rather than disappearing.
+     *
+     * This is also where a **nameless** note gets a name. Notes made before names existed have
+     * `name: ''` and, if the reader never renamed the centre card, an empty title too — so the
+     * overview had nothing to show and fell back to 「未命名笔记」. Filling it from the note's own
+     * creation time is the one-shot migration: from then on the overview shows a file name and the
+     * saved file is called the same thing.
      */
     function noteDocsOf(module) {
       const source = module && Array.isArray(module.noteDocs) ? module.noteDocs : null;
-      if (source && source.length) return source.map(normalizeNoteDoc);
-      return [normalizeNoteDoc({
+      const list = source && source.length ? source.map(normalizeNoteDoc) : [normalizeNoteDoc({
         name: '',
         root: module && module.noteRoot ? module.noteRoot : defaultNoteRoot(),
         created: Date.now(),
         // 模块级标记是旧版的；它翻过就说明这张图早就开始过了。
         started: !(module && module.noteStarted !== true),
       })];
+      for (const doc of list) {
+        if (doc.name.trim()) continue;
+        // 已经有中心节点标题的，就用它 —— 那本来就是读者给这张图起的名字。
+        const title = doc.root && typeof doc.root.title === 'string' ? doc.root.title.trim() : '';
+        doc.name = title || defaultNoteName(doc.created);
+      }
+      return list;
     }
 
     /**
@@ -4226,8 +4238,8 @@ window.__ModuleLoader__.load({
      * 给新笔记起一个默认名。用「笔记 + 创建时间」而不是留空：留空的话左栏只能显示「未命名笔记」，
      * 存出来的文件也叫这个名字 —— 读者也就无从分辨。名字随时可以在检查器里改。
      */
-    function defaultNoteName() {
-      const now = new Date();
+    function defaultNoteName(at) {
+      const now = new Date(Number(at) || Date.now());
       const pad = (value) => (value < 10 ? '0' + value : String(value));
       return '笔记 ' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
         + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());

@@ -3169,6 +3169,7 @@ async function main() {
   const noteGeometry = (() => {
     const source = noteSource();
     const names = ['noteVisibleChildren', 'noteTextLines', 'noteCardFont', 'noteCardBox', 'noteSpanV',
+      'defaultNoteName', 'noteDocsOf',
       'noteSpanH', 'noteLevels',
       'placeBranch', 'noteCentreNode', 'noteLayoutMind', 'noteLayoutLogic', 'noteLayoutTree',
       'noteLayoutOrg', 'noteAxisSubtree', 'appendAxisSubtree', 'chainWidth', 'noteLayoutTimeline',
@@ -3181,7 +3182,16 @@ async function main() {
       return Number(hit[1]);
     });
     const text = names.map((name) => grabFunction(source, name)).join('\n\n');
-    return new Function(...consts, 'clamp', text + '\nreturn {' + names.join(',') + '};')(...values, clampNumber);
+    // `normalizeNoteDoc` / `normalizeNoteNode` 会牵出 `newId`、`NOTE_SHAPES`、`clamp`……一大串。
+    // 这一个用例要验的是**命名迁移**，所以在这里放一个显式的替身：原样保留传入的字段，
+    // 只保证 `root` 存在。替身写在测试里，不会悄悄改变被测行为。
+    const docShim = (doc) => Object.assign(
+      { id: 'd', name: '', created: 0, openedAt: 0, started: true },
+      doc,
+      { root: Object.assign({ id: 'r', title: '', children: [] }, (doc && doc.root) || {}) },
+    );
+    return new Function(...consts, 'clamp', 'normalizeNoteDoc', text
+      + '\nreturn {' + names.join(',') + '};')(...values, clampNumber, docShim);
   })();
 
   check('the six structures place every card exactly once and never overlap', () => {
@@ -3540,7 +3550,30 @@ async function main() {
     }
   });
 
-  check('左栏是笔记历史：新建会加一篇，点击会切过去', () => {
+  check('没有名字的旧笔记会被补上文件名', () => {
+    // 旧存档里的笔记 `name` 是空串；如果读者也从没改过中心节点的标题，左栏就只剩「未命名笔记」
+    // 可显示（真实反馈：名字还是显示不出来）。这是一次性迁移：补一个可分辨的名字。
+    // 三种输入各验一遍，因为三种情况都会走到这里。
+    const module = { noteDocs: [
+      // ① 完全没有名字、也没有标题 → 用创建时间生成「笔记 MM-DD HH:mm」
+      { id: 'd1', name: '', created: Date.UTC(2026, 9, 13, 8, 29), root: { id: 'r1', title: '', children: [] } },
+      // ② 没有名字但有中心节点标题 → 用标题（那本来就是读者起的名字）
+      { id: 'd2', name: '', created: Date.UTC(2026, 9, 13, 8, 30), root: { id: 'r2', title: '我的图', children: [] } },
+      // ③ 已经有名字 → 一个字都不许动
+      { id: 'd3', name: '定稿', created: Date.UTC(2026, 9, 13, 8, 31), root: { id: 'r3', title: '别的标题', children: [] } },
+    ] };
+    const docs = noteGeometry.noteDocsOf(module);
+    if (docs.length !== 3) throw new Error('migration changed the number of notes');
+    if (!/^笔记 \d{2}-\d{2} \d{2}:\d{2}$/.test(docs[0].name)) {
+      throw new Error('a nameless, titleless note did not get a default name: ' + JSON.stringify(docs[0].name));
+    }
+    if (docs[1].name !== '我的图') throw new Error('a titled note did not take its title as name: ' + docs[1].name);
+    if (docs[2].name !== '定稿') throw new Error('an already-named note was renamed: ' + docs[2].name);
+    // 名字必须稳定：同一个存档读两次得到同一个名字，否则每次渲染都会改存档。
+    if (noteGeometry.noteDocsOf(module)[0].name !== docs[0].name) throw new Error('the migration is not idempotent');
+  });
+
+  check('左栏是文件总览：新建会加一篇，点击会切过去', () => {
     let view = openNotebook(noteFixture());
     // 旧存档（只有 noteRoot）必须先被当成「一篇笔记」，而不是丢掉
     if (noteDocsStored() !== null) {
