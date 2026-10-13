@@ -1220,6 +1220,13 @@ window.__ModuleLoader__.load({
 .wsb-noteDocDot{position:absolute;left:0;top:0;width:0;height:0}
 .wsb-noteDocMain{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
 .wsb-noteDocName{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 文件名 + 「当前」标签同一行；文件名占满剩余宽度，标签不参与收缩。 */
+.wsb-noteDocHead{display:flex;align-items:center;gap:6px;min-width:0}
+.wsb-noteDocHead .wsb-noteDocName{flex:1 1 auto;min-width:0}
+.wsb-noteDocNow{flex:0 0 auto;font-size:9px;line-height:1;padding:2px 5px;border-radius:999px;
+  background:color-mix(in srgb,var(--wsb-c1) 26%,transparent);
+  border:1px solid color-mix(in srgb,var(--wsb-c1) 42%,transparent);
+  color:var(--dsw-alias-label-primary)}
 .wsb-noteDoc[data-open="true"] .wsb-noteDocName{color:var(--dsw-alias-label-primary)}
 .wsb-noteDocMeta{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -1308,7 +1315,7 @@ window.__ModuleLoader__.load({
    colour: the centre card is filled with the accent, and a card grey on it is unreadable. */
 .wsb-noteCardBody{font-size:10.5px;line-height:1.45;color:inherit;opacity:.74;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-.wsb-noteCardImg{display:block;width:100%;flex:0 0 auto;border-radius:8px;
+.wsb-noteCardImg{display:block;width:100%;flex:1 1 auto;min-height:0;border-radius:8px;
   background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent)}
 .wsb-noteCardBadge{position:absolute;right:6px;top:6px;font-size:9px;line-height:1;padding:3px 5px;
   border-radius:999px;background:color-mix(in srgb,var(--note-accent) 30%,transparent);color:inherit}
@@ -2445,7 +2452,8 @@ window.__ModuleLoader__.load({
         noteColor: '颜色', noteColorAuto: '跟随结构', noteCollapse: '折叠', noteExpand: '展开',
         noteNodes: '节点', noteImages: '图片', noteLevel: '第 {n} 层', noteRoot: '中心',
         // 左栏：笔记历史（每一条 = 一张独立的图，新建的都会出现在这里）
-        noteHistory: '笔记历史', noteHistoryEmpty: '还没有笔记。点「新建笔记」开始一张。',
+        noteHistory: '文件总览', noteNowOpen: '当前',
+        noteHistoryEmpty: '还没有文件。用「文件 → 新建」开始一张。',
         noteNewNote: '新建笔记', noteNoteUntitled: '未命名笔记', noteNoteCount: '篇',
         noteNoteSaved: '已保存在本地', noteNoteDelete: '删除这篇笔记',
         noteNoteDeleteHint: '右键笔记可以删除',
@@ -2693,7 +2701,8 @@ window.__ModuleLoader__.load({
         noteShape: 'Shape', noteShapeRound: 'Rounded', noteShapeRect: 'Square', noteShapeUnder: 'Underline',
         noteColor: 'Colour', noteColorAuto: 'Follow structure', noteCollapse: 'Collapse', noteExpand: 'Expand',
         noteNodes: 'nodes', noteImages: 'pictures', noteLevel: 'Level {n}', noteRoot: 'Centre',
-        noteHistory: 'Note history', noteHistoryEmpty: 'No notes yet. Hit New note to start one.',
+        noteHistory: 'Files', noteNowOpen: 'current',
+        noteHistoryEmpty: 'No files yet. Use File → New to start one.',
         noteNewNote: 'New note', noteNoteUntitled: 'Untitled note', noteNoteCount: 'notes',
         noteNoteSaved: 'saved locally', noteNoteDelete: 'Delete this note',
         noteNoteDeleteHint: 'Right-click a note to delete it',
@@ -4175,6 +4184,9 @@ window.__ModuleLoader__.load({
         // 没有这个字段的存档按 true 处理 —— 它要么来自更早的版本（那时模块级标记已经翻过了），
         // 要么来自迁移，两种情况下读者都不是第一次看到空画布。
         started: source.started === undefined ? true : source.started === true,
+        // 最近一次打开的时间。「文件总览」按它排序 —— 读者找的是"我刚才在弄哪个"，
+        // 而不是"哪个先建"。旧存档没有这个字段，回落成创建时间。
+        openedAt: Number(source.openedAt) || Number(source.created) || Date.now(),
       };
     }
 
@@ -4194,6 +4206,31 @@ window.__ModuleLoader__.load({
         // 模块级标记是旧版的；它翻过就说明这张图早就开始过了。
         started: !(module && module.noteStarted !== true),
       })];
+    }
+
+    /**
+     * 保存时用的名字。
+     *
+     * **不能再用模块名**（`module.name` 永远是「框架笔记」）：那样每篇存下来都叫同一个名字，
+     * 读者在文件管理器里根本分不出哪份是哪份 —— 这正是「保存之后左边还显示不了文件名」的另一半。
+     * 顺序是：笔记自己的名字 → 中心节点标题 → 模块名。
+     */
+    function noteSaveName(doc, fallback) {
+      const explicit = doc && typeof doc.name === 'string' ? doc.name.trim() : '';
+      if (explicit) return explicit;
+      const title = doc && doc.root && typeof doc.root.title === 'string' ? doc.root.title.trim() : '';
+      return title || fallback;
+    }
+
+    /**
+     * 给新笔记起一个默认名。用「笔记 + 创建时间」而不是留空：留空的话左栏只能显示「未命名笔记」，
+     * 存出来的文件也叫这个名字 —— 读者也就无从分辨。名字随时可以在检查器里改。
+     */
+    function defaultNoteName() {
+      const now = new Date();
+      const pad = (value) => (value < 10 ? '0' + value : String(value));
+      return '笔记 ' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+        + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
     }
 
     /** Which note is open. Falls back to the first when the pointer is missing or stale. */
@@ -4219,11 +4256,13 @@ window.__ModuleLoader__.load({
     /** A brand new note: a fresh centre node, named by the reader (or left to the fallback). */
     function makeNoteDoc(name) {
       const root = defaultNoteRoot();
-      if (name) root.title = name;
+      // 没给名字就起一个默认的：留空的话左栏只能显示「未命名笔记」，存出来的文件也叫这个名字。
+      const chosen = typeof name === 'string' && name.trim() ? name.trim() : defaultNoteName();
+      if (chosen) root.title = chosen;
       // `started: true` on purpose. This note exists because the reader pressed 新建笔记, so the
       // "click the empty canvas to begin" explainer would be advice they have already taken.
       return normalizeNoteDoc({
-        name: typeof name === 'string' ? name : '', root, created: Date.now(), started: true,
+        name: chosen, root, created: Date.now(), started: true,
       });
     }
 
@@ -8228,6 +8267,7 @@ window.__ModuleLoader__.load({
     const NOTE_RIB = 96;      // fishbone rib: 96 across and 96 up, i.e. exactly 45°
     const NOTE_SUB_INDENT = 22; // lateral indent of one sub-level on a 时间轴 / 鱼骨 branch
     const NOTE_TL_GAP = 30;   // gap between two consecutive events on the timeline axis
+    const NOTE_RECENT_MAX = 10; // 文件总览里最多列出多少个「最近打开」
     const NOTE_PAD = 56;      // margin baked into every layout, for the selection ring
 
     /** Children that take part in a layout: a collapsed node hides its whole subtree. */
@@ -8300,10 +8340,19 @@ window.__ModuleLoader__.load({
       const titleLines = Math.min(2, noteTextLines(node && node.title, textWidth, font.title));
       const bodyLines = Math.min(4, noteTextLines(node && node.body, textWidth, font.body));
       const textH = titleLines * font.title * 1.35 + (bodyLines ? bodyLines * font.body * 1.45 + 4 : 0);
-      const auto = Math.max(base.h, font.padY + textH);
-      const height = clamp(Number(node && node.h) || auto, 44, 900);
       const image = node && node.imageKey ? clamp(Number(node.imageHeight) || 96, 56, 240) : 0;
-      return { w: width, h: height + (image ? image + 10 : 0) };
+      // 没拉过：够文字、也够图片。
+      const auto = Math.max(base.h, font.padY + textH + (image ? image + 10 : 0));
+      const manualH = Number(node && node.h);
+      if (isFinite(manualH) && manualH > 0) {
+        // 手动拉伸过：**以读者的尺寸为准**，图片去填剩下的空间。
+        // 原来这里还要再加一次图片高度 —— 拖大卡片时图片高度会再加到总高上，卡片越拖越高，
+        // 永远追不上指针。图片现在靠 flex 撑满（见 .wsb-noteCardImg），所以不再叠加。
+        // 但也不能小到把文字挤掉：下限是这张卡片自己文字需要的高度。
+        const floor = font.padY + textH;
+        return { w: width, h: clamp(Math.max(manualH, floor), 44, 900) };
+      }
+      return { w: width, h: clamp(auto, 44, 900) };
     }
 
     /** The vertical band a subtree needs in a left→right structure. */
@@ -9163,7 +9212,11 @@ window.__ModuleLoader__.load({
       const [menu, setMenu] = useState(null);
       const [notice, setNotice] = useState('');
 
-      const rows = docs.slice().sort((left, right) => right.created - left.created);
+      const rows = docs.slice().sort((left, right) => (right.openedAt || right.created) - (left.openedAt || left.created));
+      // 文件总览：当前文件永远在最上面，其余按最近打开排，最多 10 条。
+      const current = rows.filter((doc) => doc.id === activeId);
+      const recent = rows.filter((doc) => doc.id !== activeId).slice(0, NOTE_RECENT_MAX);
+      const shown = current.concat(recent);
       const askDelete = (doc) => {
         if (docs.length <= 1) {
           setNotice(t.noteNoteLastOne);
@@ -9179,8 +9232,8 @@ window.__ModuleLoader__.load({
         h(PaneHead, { title: t.noteHistory, sub: docs.length + '' }),
         h('div', { className: 'wsb-body' },
           h('div', { className: 'wsb-noteRows wsb-noteDocRows', 'data-note-doc-rows': '1' },
-            rows.length
-              ? rows.map((doc, index) => {
+            shown.length
+              ? shown.map((doc, index) => {
                 const meta = noteDocMeta(doc);
                 const open = doc.id === activeId;
                 return h('button', {
@@ -9195,12 +9248,15 @@ window.__ModuleLoader__.load({
                 },
                   h('span', { className: 'wsb-noteDocDot', 'aria-hidden': 'true' }),
                   h('span', { className: 'wsb-noteDocMain' },
-                    h('span', { className: 'wsb-noteDocName', 'data-note-doc-name': doc.id },
-                      noteDocLabel(doc, t)),
+                    h('span', { className: 'wsb-noteDocHead' },
+                      h('span', { className: 'wsb-noteDocName', 'data-note-doc-name': doc.id },
+                        noteDocLabel(doc, t)),
+                      // 当前那篇明确标出来：总览里既有"正在编辑的"，也有"最近打开的"。
+                      open ? h('span', { className: 'wsb-noteDocNow' }, t.noteNowOpen) : null),
                     h('span', { className: 'wsb-noteDocMeta' },
                       meta.nodes + ' ' + t.noteNodes,
                       meta.images ? ' · ' + meta.images + ' ' + t.noteImages : '',
-                      ' · ' + noteDocAge(doc.created, t))));
+                      ' · ' + noteDocAge(doc.openedAt || doc.created, t))));
               })
               : h('div', { className: 'wsb-noteEmptyMini' }, t.noteHistoryEmpty)),
           notice ? h('div', { className: 'wsb-noteNotice', 'data-note-notice': '1' }, notice) : null,
@@ -9651,6 +9707,8 @@ window.__ModuleLoader__.load({
           const stack = noteDocsOf(target);
           const doc = stack.find((item) => item.id === id);
           if (!doc) return;
+          // 记下"最近打开"：文件总览按它排序，读者找的是"我刚在弄哪个"。
+          doc.openedAt = Date.now();
           target.noteDocs = stack;
           target.activeNoteId = doc.id;
           target.noteRoot = doc.root;
@@ -9918,7 +9976,7 @@ window.__ModuleLoader__.load({
 
       const exportAs = useCallback((format) => {
         setFileOpen(false);
-        const title = module.name || t.kindNotebook;
+        const title = noteSaveName(activeDoc, module.name || t.kindNotebook);
         if (format === 'native') {
           collectImages().then(({ images, missing }) => {
             const text = noteToNativeText({
@@ -10458,8 +10516,10 @@ window.__ModuleLoader__.load({
                         ? h('img', {
                           className: 'wsb-noteCardImg', 'data-note-image-img': id, src: url,
                           alt: note.imageName || '', draggable: false,
+                          // 高度交给 flex（.wsb-noteCardImg 是 flex:1 1 auto），这样图片永远填满
+                          // 卡片除文字以外的那块空间 —— 拖大卡片时图片跟着一起变大，而不是停在
+                          // 一个写死的像素高度上。object-fit 只决定"填满"还是"完整显示"。
                           style: {
-                            height: Math.max(32, Math.min(Number(note.imageHeight) || 96, at.h - 22)) + 'px',
                             objectFit: note.imageFit === 'contain' ? 'contain' : 'cover',
                           },
                         })

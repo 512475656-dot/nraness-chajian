@@ -355,7 +355,7 @@ function check(label, run) {
 function loadModule() {
   const source = fs.readFileSync(path.join(ROOT, 'client.js'), 'utf8');
   let registration = null;
-  const exports_ = { blobs: [], printed: '', prints: 0, clicks: 0 };
+  const exports_ = { blobs: [], printed: '', prints: 0, clicks: 0, downloads: [] };
   const windowStub = {
     __ModuleLoader__: { load: (value) => { registration = value } },
     localStorage: {
@@ -444,13 +444,17 @@ function loadModule() {
           };
           return frame;
         }
-        return {
+        // The download path sets `anchor.download = filename` then clicks it. Record the name so a
+        // test can assert **what the file will be called** — that is the whole point of naming a
+        // note, and it was silently the module name ("框架笔记") for every save.
+        const anchor = {
           style: {},
-          click() { exports_.clicks += 1 },
           href: '',
           download: '',
           setAttribute() {},
+          click() { exports_.clicks += 1; if (anchor.download) exports_.downloads.push(anchor.download) },
         };
+        return anchor;
       },
       body: { appendChild() {}, removeChild() {} },
     },
@@ -3400,10 +3404,22 @@ async function main() {
     // 越界要夹住，免得拉出 1px 或者无限大的卡片。
     const tiny = g.noteCardBox({ w: 1, h: 1 }, 1);
     if (tiny.w < 96 || tiny.h < 44) throw new Error('a resized card was not clamped: ' + JSON.stringify(tiny));
-    // 图片仍然叠加在（可能已经变高的）文字之上。
+    // 图片的高度要算进卡片。现在的高度是 `max(基础高, 内边距 + 文字 + 图片 + 间隙)`：
+    // 只有文字时是基础高（66），把图片算进去之后就可能超过它，所以**差值不是整整 110** ——
+    // 那 110 里有 31.125 本来就被基础高覆盖了。断言要按那个公式算，不能想当然。
     const withPic = g.noteCardBox({ title: '题', imageKey: 'k', imageHeight: 100 }, 1);
-    if (withPic.h - short.h !== 110) {
-      throw new Error('a picture no longer adds its own height: ' + (withPic.h - short.h));
+    const noPic = g.noteCardBox({ title: '题' }, 1);
+    const font = g.noteCardFont(1);
+    const lines = Math.min(2, g.noteTextLines('题', 188 - font.padX, font.title));
+    const wanted = font.padY + lines * font.title * 1.35 + 100 + 10;
+    if (withPic.h !== wanted) {
+      throw new Error('a picture was not counted into the card: got ' + withPic.h + ', expected ' + wanted);
+    }
+    if (!(withPic.h > noPic.h)) throw new Error('a picture did not make the card taller at all');
+    // 手动拉过之后，图片不再叠加到高度上（否则越拖越高，追不上指针）。
+    const stretched = g.noteCardBox({ title: '题', imageKey: 'k', imageHeight: 100, h: 300 }, 1);
+    if (stretched.h !== 300) {
+      throw new Error('a manually sized card with a picture did not keep its size: ' + stretched.h);
     }
   });
 
@@ -3411,8 +3427,13 @@ async function main() {
     const g = noteGeometry;
     const plain = g.noteCardBox({}, 1);
     const withPicture = g.noteCardBox({ imageKey: 'k', imageHeight: 120 }, 1);
-    if (withPicture.h - plain.h !== 130) {
-      throw new Error('a 120px picture did not add 130px to the card (' + (withPicture.h - plain.h) + ')');
+    // 一张**只有图片、没有文字**的卡片：高度 = max(基础高, 内边距 + 图片 + 间隙)。
+    // 无文字时文字高度是 0，所以 18 + 0 + 120 + 10 = 148 —— 比空卡的 66 高 82。
+    if (withPicture.h !== 148) {
+      throw new Error('a 120px picture produced the wrong box height: ' + withPicture.h);
+    }
+    if (withPicture.h - plain.h !== 82) {
+      throw new Error('a 120px picture did not grow the card as expected (' + (withPicture.h - plain.h) + ')');
     }
     if (g.noteCardBox({ imageKey: 'k' }, 0).w <= g.noteCardBox({}, 2).w) {
       throw new Error('the centre is not drawn larger than a leaf');
@@ -3536,9 +3557,16 @@ async function main() {
     const docs = noteDocsStored();
     if (!docs || docs.length !== 2) throw new Error('新建 did not add a note, saw ' + (docs ? docs.length : 'none'));
     if (noteModule().activeNoteId !== docs[1].id) throw new Error('the new note was not opened');
-    // 新笔记的中心节点是空的，所以它**不是**第一篇那棵树 —— 这就是"画布切过去了"的证据。
-    if (noteTreeStored().title !== '') {
-      throw new Error('the canvas did not switch to the new (empty) note: ' + JSON.stringify(noteTreeStored().title));
+    // 新笔记不再是"无名"的：它带一个默认名（「笔记 MM-DD HH:mm」），所以左栏与存出来的文件
+    // 都有可分辨的名字 —— 这正是「保存之后左边应该显示文件名」。判据换成"它有自己的名字、
+    // 且和第一篇不同"。
+    const newTitle = noteTreeStored().title;
+    if (!newTitle) throw new Error('the new note has no usable name at all');
+    if (newTitle === firstTitle) {
+      throw new Error('the canvas did not switch to the new note (name is still ' + JSON.stringify(newTitle) + ')');
+    }
+    if (!/^笔记 \d{2}-\d{2} \d{2}:\d{2}$/.test(newTitle)) {
+      throw new Error('the default note name is not the documented shape: ' + JSON.stringify(newTitle));
     }
     if (noteTreeStored().id === docs[0].root.id) throw new Error('the new note reused the old root');
     if (docRows().length !== 2) throw new Error('the history rail lists ' + docRows().length + ' of 2 notes');
@@ -3547,10 +3575,16 @@ async function main() {
       && element.props['data-open'] === 'true');
     if (openRows.length !== 1) throw new Error('exactly one note should be marked open, saw ' + openRows.length);
     if (openRows[0].props['data-note-doc'] !== docs[1].id) throw new Error('the wrong note is marked open');
-    // 未命名的笔记在列表里要有一个可读的占位名，而不是空串。
+    // 文件总览里必须显示**名字**（不再是「未命名笔记」）。
     const firstName = view.elements.filter((element) => element.props['data-note-doc-name'] === docs[1].id);
-    if (!firstName.length || !JSON.stringify(firstName[0].children).match(/未命名/)) {
-      throw new Error('an unnamed note has no readable label in the history');
+    const nameText = firstName.length ? JSON.stringify(firstName[0].children) : '';
+    if (!firstName.length || !/笔记 \d{2}-\d{2}/.test(nameText)) {
+      throw new Error('the file overview does not show the file name: ' + nameText);
+    }
+    // 当前那篇要有「当前」标记：总览里既有正在编辑的，也有最近打开的。
+    const nowRows = view.elements.filter((element) => element.props['data-open'] === 'true');
+    if (!nowRows.length || !/当前|current/.test(JSON.stringify(nowRows[0]))) {
+      throw new Error('the overview does not mark which file is open');
     }
     // 点回第一篇：树要换回原来那棵
     view = harness.dispatch(runtime, () => harness.click(runtime,
@@ -4045,11 +4079,14 @@ async function main() {
       id: 'n0', title: '中心主题', body: '',
       children: [{ id: 'n1', title: '带图', imageKey: 'pic-1', imageName: 'shot.png', imageHeight: 120, children: [] }],
     });
-    // The card box grows by the picture height plus the gap the layout reserves for it.
+    // The card box accounts for the picture. Compute the expectation from the same pieces the
+    // layout uses rather than hard-coding an offset (the old test hard-coded `plain.h + 130`, which
+    // double-counted the base height that `max()` already covers).
     const card = noteCardEl(view, 'n1');
-    const plain = noteGeometry.noteCardBox({}, 1);
-    if (Number.parseFloat(card.props.style.height) !== plain.h + 130) {
-      throw new Error('the card did not reserve room for the picture: ' + card.props.style.height);
+    const expected = noteGeometry.noteCardBox({ title: '带图', imageKey: 'pic-1', imageHeight: 120 }, 1).h;
+    if (Number.parseFloat(card.props.style.height) !== expected) {
+      throw new Error('the card did not reserve room for the picture: got '
+        + card.props.style.height + ', expected ' + expected);
     }
     // The blob is read through the shared media store and shown as a blob URL. Three macrotask
     // turns: open the connection, answer the get, then let the state update land.
@@ -4087,7 +4124,9 @@ async function main() {
     view = harness.dispatch(runtime, () => harness.click(runtime,
       (element) => element.props['data-note-image-clear'] !== undefined));
     if (noteById(noteTreeStored(), 'n1').imageKey !== '') throw new Error('removing the picture left its key behind');
-    if (noteCardEl(view, 'n1').props.style.height !== plain.h + 'px') throw new Error('the card did not shrink back');
+    if (noteCardEl(view, 'n1').props.style.height !== noteGeometry.noteCardBox({ title: '带图' }, 1).h + 'px') {
+      throw new Error('the card did not shrink back after the picture was removed');
+    }
   });
 
   /**
@@ -4388,6 +4427,7 @@ async function main() {
 
     // 保存：原生 JSON，图片以 data URL 写进文件（FileReader 由 harness 打桩）。
     exports_.blobs.length = 0;
+    exports_.downloads.length = 0;
     view = clickFile(view, 'data-note-save');
     for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => { setTimeout(resolve, 4) });
     view = harness.flush(runtime);
@@ -4398,6 +4438,17 @@ async function main() {
     if (!saved.tree || saved.tree.children.length !== 1) throw new Error('保存的 JSON 没带树');
     if (!saved.images || !saved.images['pic-save']) throw new Error('保存的 JSON 没把图片写进去');
     if (!saved.style || saved.style.layout !== 'mind') throw new Error('保存的 JSON 没带图纸设置');
+    // **文件必须按这一篇的名字命名**。以前用的是模块名（永远是「框架笔记」），于是每一篇存下来
+    // 都叫同一个名字，读者在文件管理器里分不出哪份是哪份。测试桩现在记下了 anchor.download。
+    const named = exports_.downloads[exports_.downloads.length - 1] || '';
+    if (!named) throw new Error('保存没有记录文件名');
+    if (named.indexOf('存档测试') < 0) {
+      throw new Error('the saved file is not named after the note: ' + named);
+    }
+    if (named.indexOf('框架笔记') >= 0) {
+      throw new Error('the saved file is still named after the module: ' + named);
+    }
+    if (!/\.json$/.test(named)) throw new Error('the saved file lost its extension: ' + named);
 
     // 打开：读一个 .mm，树被替换，而且这一步进历史（Ctrl+Z 能拿回来）。
     const mmFile = '<map version="1.0.1"><node TEXT="读进来的根"><node TEXT="读进来的子"/></node></map>';
