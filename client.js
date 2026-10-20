@@ -919,11 +919,23 @@ window.__ModuleLoader__.load({
 .wsb-ringTile[data-tone="err"]{--wsb-ring:#ff6b6b}
 .wsb-ringWrap{position:relative;width:128px;height:128px;display:grid;place-items:center}
 .wsb-ring{position:absolute;inset:0}
-.wsb-ringTrack{stroke:color-mix(in srgb,#fff 13%,transparent)}
-.wsb-ringFill{stroke:var(--wsb-ring);transition:stroke-dashoffset .86s cubic-bezier(.32,.72,0,1),stroke .3s ease}
+/* 整环 = 额度。它被切成**两段**，不是"一个值 + 一圈背景"：
+   绿 = 还剩多少，灰 = 本项目已经消耗掉多少。灰色扫过的角度就是消耗占比，不用再去算。 */
+.wsb-ringTrack{stroke:color-mix(in srgb,#fff 8%,transparent)}
+.wsb-ringUsed{stroke:color-mix(in srgb,#fff 26%,transparent);
+  transition:stroke-dasharray .86s cubic-bezier(.32,.72,0,1),stroke-dashoffset .86s cubic-bezier(.32,.72,0,1)}
+.wsb-ringFill{stroke:var(--wsb-ring);
+  transition:stroke-dasharray .86s cubic-bezier(.32,.72,0,1),stroke-dashoffset .86s cubic-bezier(.32,.72,0,1),stroke .3s ease}
 .wsb-ringGlyph{font-size:30px;line-height:1;color:var(--wsb-ring);opacity:.92}
 .wsb-ringValue{font-size:37px;font-weight:660;letter-spacing:-.025em;line-height:1.08;font-variant-numeric:tabular-nums}
 .wsb-ringCaption{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+/* 图例：告诉读者这两种颜色各指什么。颜色跟着同一个变量走，所以警报档位变色时图例也跟着变。 */
+.wsb-ringLegend{display:flex;align-items:center;gap:10px;margin-top:2px;font-size:10.5px;
+  color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.wsb-ringKey{display:inline-flex;align-items:center;gap:4px}
+.wsb-ringKey i{display:block;width:7px;height:7px;border-radius:999px;flex:0 0 auto}
+.wsb-ringKey[data-k="left"] i{background:var(--wsb-ring)}
+.wsb-ringKey[data-k="used"] i{background:color-mix(in srgb,#fff 40%,transparent)}
 .wsb-tokenSide{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:7px}
 .wsb-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .wsb-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-variant-numeric:tabular-nums;
@@ -2387,6 +2399,7 @@ window.__ModuleLoader__.load({
         turns: '轮次', steps: '步骤', calls: '工具调用', changedFiles: '改动文件', errors: '错误',
         input: '输入', output: '输出', cacheRead: '缓存命中', cacheWrite: '缓存写入', total: '合计',
         window: '上下文窗口', pressure: '上次占用', projected: '预计占用', remaining: '剩余可用', budget: '自设预算',
+        ringLeft: '剩余', ringUsed: '已用',
         usedRatio: '占用比例', breakdown: '上下文构成', systemTokens: '系统提示', toolsTokens: '工具定义', messageTokens: '消息',
         perTurn: '逐轮用量', noTurns: '这个会话还没有已记录的轮次。',
         nodeSession: '会话', nodeTurn: '轮次', nodeStep: '步骤', nodeAssistant: '助手输出', nodeTool: '工具',
@@ -2640,6 +2653,7 @@ window.__ModuleLoader__.load({
         turns: 'Turns', steps: 'Steps', calls: 'Tool calls', changedFiles: 'Files changed', errors: 'Errors',
         input: 'Input', output: 'Output', cacheRead: 'Cache read', cacheWrite: 'Cache write', total: 'Total',
         window: 'Context window', pressure: 'Last prompt', projected: 'Next prompt', remaining: 'Remaining', budget: 'Budget',
+        ringLeft: 'left', ringUsed: 'used',
         usedRatio: 'Occupancy', breakdown: 'Composition', systemTokens: 'System', toolsTokens: 'Tools', messageTokens: 'Messages',
         perTurn: 'Per-turn usage', noTurns: 'This session has no recorded turns yet.',
         nodeSession: 'Session', nodeTurn: 'Turn', nodeStep: 'Step', nodeAssistant: 'Assistant', nodeTool: 'Tool',
@@ -6407,26 +6421,63 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'wsb-badge' }, source.tool))))));
     }
 
-    /** Apple-battery-style circular gauge: ring + one huge number + one small caption. */
+    /**
+     * Two-segment circular gauge.
+     *
+     * The whole ring is the quota, and it is split into exactly two arcs:
+     *   green (--wsb-ring)      what is still available
+     *   grey  (--wsb-ring-used) what this project has already consumed
+     * So the grey sweep *is* the consumption share - readable without doing arithmetic. The
+     * previous shape was "a value arc over a passive track", which looks identical but reads as
+     * one number plus decoration; two named segments are what makes the split legible.
+     *
+     * Both arcs start at 12 o'clock and run clockwise, and both keep round caps. The grey tail
+     * and the green head therefore overlap symmetrically across the junction, so the boundary
+     * stays at its true angle. A single offset arc with a round cap would instead extend past the
+     * true reading by half a stroke width at each end.
+     */
     function RingTile({ t, ratio, value, caption, tone, glyph }) {
       const radius = 46;
       const circumference = 2 * Math.PI * radius;
-      const filled = Math.max(0, Math.min(1, Number(ratio) || 0));
+      // No reading is a distinct state: it must not paint a full grey ring, which would say
+      // "100 % consumed" when the truth is "not known yet".
+      const known = ratio !== null && ratio !== undefined && isFinite(Number(ratio));
+      const left = known ? Math.max(0, Math.min(1, Number(ratio))) : 0;
+      const used = known ? Math.max(0, Math.min(1, 1 - left)) : 0;
       // The ring starts empty and draws itself to the real reading on arrival.
       const settled = useSettle(90);
-      const shown = settled ? filled : 0;
-      return h('div', { className: 'wsb-ringTile', 'data-tone': tone, 'data-ring': String(Math.round(filled * 1000) / 1000) },
+      const shownLeft = settled ? left : 0;
+      const shownUsed = settled ? used : 0;
+      const percent = (value) => Math.round(value * 1000) / 10;
+      const arc = (className, startAt, length) => h('circle', {
+        className, cx: 60, cy: 60, r: radius, fill: 'none', strokeWidth: 11,
+        strokeLinecap: 'round', transform: 'rotate(-90 60 60)',
+        // A dash of `length` followed by the rest of the circle, shifted so the dash starts at
+        // `startAt`. Exact by construction, and it is what makes the two segments meet.
+        strokeDasharray: (length * circumference) + ' ' + ((1 - length) * circumference),
+        strokeDashoffset: String(-startAt * circumference),
+        // A zero-length dash with a round cap paints a dot in some engines; hide it instead.
+        strokeOpacity: length > 0 ? 1 : 0,
+      });
+      return h('div', {
+        className: 'wsb-ringTile', 'data-tone': tone,
+        'data-ring': known ? String(Math.round(left * 1000) / 1000) : 'unknown',
+        'data-ring-used': known ? String(Math.round(used * 1000) / 1000) : 'unknown',
+      },
         h('div', { className: 'wsb-ringWrap' },
           h('svg', { className: 'wsb-ring', viewBox: '0 0 120 120', width: 128, height: 128, 'aria-hidden': 'true' },
+            // Faint base ring: the whole quota, so the gauge still reads as a ring at 0 %.
             h('circle', { className: 'wsb-ringTrack', cx: 60, cy: 60, r: radius, fill: 'none', strokeWidth: 11 }),
-            h('circle', {
-              className: 'wsb-ringFill', cx: 60, cy: 60, r: radius, fill: 'none', strokeWidth: 11,
-              strokeLinecap: 'round', transform: 'rotate(-90 60 60)',
-              strokeDasharray: String(circumference), strokeDashoffset: String(circumference * (1 - shown)),
-            })),
-          h('span', { className: 'wsb-ringGlyph' }, glyph || '◎')),
+            // Grey first (consumed), then green (available) starting where the grey ended.
+            arc('wsb-ringUsed', 0, shownUsed),
+            arc('wsb-ringFill', shownUsed, shownLeft))),
         h('div', { className: 'wsb-ringValue' }, value),
-        h('div', { className: 'wsb-ringCaption' }, caption));
+        h('div', { className: 'wsb-ringCaption' }, caption),
+        h('div', { className: 'wsb-ringLegend' },
+          h('span', { className: 'wsb-ringKey', 'data-k': 'left' }, h('i', null),
+            t.ringLeft + ' ' + (known ? percent(left) + '%' : '-')),
+          h('span', { className: 'wsb-ringKey', 'data-k': 'used' }, h('i', null),
+            t.ringUsed + ' ' + (known ? percent(used) + '%' : '-'))));
     }
 
     function ProgressPane({ t, model, usage, pressure, breakdown, status, selectedId, onSelectTurn, hasMore, projects }) {
@@ -6463,9 +6514,12 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wsb-tokenTop' },
             h(RingTile, {
               t,
-              ratio: contextWindow > 0 ? remaining / contextWindow : 0,
+              // null, not 0: "no reading" must not paint a full grey ring (= 100 % consumed).
+              ratio: contextWindow > 0 ? remaining / contextWindow : null,
               value: contextWindow > 0 ? formatCount(remaining) : '—',
-              caption: contextWindow > 0 ? (t.remaining + ' ' + Math.round((remaining / contextWindow) * 1000) / 10 + '%') : t.noFacts,
+              // The two percentages live in the legend now (they belong to the two segments);
+              // the caption just names what the big number is, so it is not printed twice.
+              caption: contextWindow > 0 ? t.remaining : t.noFacts,
               tone: contextWindow > 0 ? (remaining / contextWindow < 0.1 ? 'err' : remaining / contextWindow < 0.28 ? 'warn' : 'ok') : undefined,
               glyph: '◎',
             }),

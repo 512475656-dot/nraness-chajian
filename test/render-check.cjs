@@ -2717,11 +2717,19 @@ async function main() {
         throw new Error('share bars should start at zero, saw ' + bar.props.style.width);
       }
     }
-    const ring = opened.elements.find((element) => hasClass(element, 'wsb-ringFill'));
-    if (!ring) throw new Error('no ring rendered');
-    if (Number(ring.props.strokeDashoffset) !== Number(ring.props.strokeDasharray)) {
-      throw new Error('the ring should start empty and draw itself');
-    }
+    // The ring must start with **both** segments at zero length and grow into place. Reading the
+    // dash length (first token of strokeDasharray) is the direct measure; the second token is the
+    // rest of the circle, and the two always add up to the circumference.
+    const arcOf = (el) => {
+      const parts = String(el.props.strokeDasharray).split(/\s+/).map(Number);
+      const c = parts[0] + parts[1];
+      return { len: parts[0], c, frac: c > 0 ? parts[0] / c : 0, start: c > 0 ? -Number(el.props.strokeDashoffset) / c : 0 };
+    };
+    const green = opened.elements.find((element) => hasClass(element, 'wsb-ringFill'));
+    const grey = opened.elements.find((element) => hasClass(element, 'wsb-ringUsed'));
+    if (!green || !grey) throw new Error('the ring is not split into a remaining and a used arc');
+    if (arcOf(green).len > 0.001) throw new Error('the remaining arc does not start empty');
+    if (arcOf(grey).len > 0.001) throw new Error('the used arc does not start empty');
   });
 
   check('tree renders tool rows carrying their argument text', () => {
@@ -2750,10 +2758,59 @@ async function main() {
     if (ring.props['data-ring'] === undefined) throw new Error('ring tile exposes no fill ratio');
     const fill = game.elements.find((element) => hasClass(element, 'wsb-ringFill'));
     if (!fill) throw new Error('ring fill circle missing');
-    if (!(Number(fill.props.strokeDasharray) > 0)) throw new Error('ring has no circumference');
+    const parts = String(fill.props.strokeDasharray).split(/\s+/).map(Number);
+    if (!(parts[0] + parts[1] > 0)) throw new Error('ring has no circumference');
     const chips = game.elements.filter((element) => hasClass(element, 'wsb-chip'));
     if (chips.length < 4) throw new Error('expected consumption chips, saw ' + chips.length);
     if (!/轮次|Turn/.test(gameText)) throw new Error('per-turn list missing');
+  });
+
+  await check('the ring is two segments: green = left, grey = used, and they fill the circle', async () => {
+    // `game` is the arrival frame (the ring is still at zero length there), so wait for the
+    // settle timer the tile uses before measuring anything.
+    await new Promise((resolve) => { setTimeout(resolve, 160) });
+    const settled = harness.flush(runtime);
+    const game2 = { elements: settled.elements };
+    // 要求：绿色代表当前还有的额度，灰色代表本项目消耗，整环体现消耗占比。
+    // 所以这是**两段**、加起来正好一圈，而不是"一个值 + 一圈背景"。
+    const arcOf = (el) => {
+      const parts = String(el.props.strokeDasharray).split(/\s+/).map(Number);
+      const c = parts[0] + parts[1];
+      return { frac: c > 0 ? parts[0] / c : 0, start: c > 0 ? -Number(el.props.strokeDashoffset) / c : 0 };
+    };
+    const tile = game2.elements.find((element) => hasClass(element, 'wsb-ringTile'));
+    if (!tile) throw new Error('ring tile missing');
+    const left = Number(tile.props['data-ring']);
+    const used = Number(tile.props['data-ring-used']);
+    if (!(left >= 0 && left <= 1)) throw new Error('the ring exposes no usable remaining ratio: ' + left);
+    if (Math.abs(left + used - 1) > 0.002) {
+      throw new Error('the two segments do not add up to one circle: left ' + left + ' + used ' + used);
+    }
+    const green = game2.elements.find((element) => hasClass(element, 'wsb-ringFill'));
+    const grey = game2.elements.find((element) => hasClass(element, 'wsb-ringUsed'));
+    if (!green || !grey) throw new Error('the ring is not split into a remaining and a used arc');
+    // 每一段的弧长必须等于它宣称的比例（这是"占比"这件事本身）。
+    if (Math.abs(arcOf(green).frac - left) > 0.004) {
+      throw new Error('the green arc is not the remaining share: ' + arcOf(green).frac + ' vs ' + left);
+    }
+    if (Math.abs(arcOf(grey).frac - used) > 0.004) {
+      throw new Error('the grey arc is not the consumed share: ' + arcOf(grey).frac + ' vs ' + used);
+    }
+    // 灰的从 12 点开始，绿的紧接在灰的后面 —— 中间不留缝，也不重叠。
+    if (Math.abs(arcOf(grey).start) > 0.004) throw new Error('the grey arc does not start at twelve');
+    if (Math.abs(arcOf(green).start - used) > 0.004) {
+      throw new Error('the green arc does not pick up where the grey one ends: ' + arcOf(green).start + ' vs ' + used);
+    }
+    // 图例把两种颜色各指什么写清楚，并且带的是同一组百分比。
+    const keys = game2.elements.filter((element) => hasClass(element, 'wsb-ringKey'));
+    if (keys.length !== 2) throw new Error('expected a two-colour legend, saw ' + keys.length);
+    const text = keys.map((key) => JSON.stringify(key.children)).join(' ');
+    const pct = (value) => Math.round(value * 1000) / 10;
+    if (text.indexOf(pct(left) + '%') < 0) throw new Error('the legend does not carry the remaining percentage: ' + text);
+    if (text.indexOf(pct(used) + '%') < 0) throw new Error('the legend does not carry the consumed percentage: ' + text);
+    if (!/剩余|left/.test(text) || !/已用|used/.test(text)) {
+      throw new Error('the legend does not name both segments: ' + text);
+    }
   });
 
   check('per-turn rows are numbered 1..N and show my own prompt text', () => {
