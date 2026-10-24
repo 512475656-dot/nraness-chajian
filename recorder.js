@@ -162,24 +162,44 @@ export async function diskInfo() {
 
 //#region 预览（独立的小尺寸 MJPEG）
 
-const preview = { child: null, frame: null, at: 0, stderr: '' };
+const preview = { child: null, frame: null, at: 0, stderr: '', key: '' };
 
 /**
  * 打开预览：独立跑一个 4fps、480px 宽的 MJPEG 进程，只保留最新一帧。
  *
- * 它是单独的进程，所以开关预览不会影响正在录制的文件；录制中同时开预览，CPU 代价也只是
- * 一次小尺寸抓屏。
+ * 预览必须**和正在录的那一块完全一致**：
+ *   · 框选区域 → gdigrab 用同一组 offset/video_size，看到的就是录下来的那一块；
+ *   · 整屏     → ddagrab 取主显示器（和录制同一条 ddagrab 路径），而不是把两块屏拼在一起。
+ * 抓取源不同，预览和成片的构图就会对不上 —— 那是之前「预览显示的内容和录出来的不一样」的来源。
+ *
+ * `region` 变化时（换了一次框选）会重启预览进程。
  */
-export async function startPreview() {
-  if (preview.child) return { ok: true, running: true };
+export async function startPreview(region) {
+  const key = region && region.w >= 16 && region.h >= 16
+    ? 'r:' + Math.round(region.x) + ',' + Math.round(region.y) + ',' + Math.round(region.w) + 'x' + Math.round(region.h)
+    : 'full';
+  if (preview.child && preview.key === key) return { ok: true, running: true };
+  if (preview.child) stopPreview();
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) return { ok: false, needsFfmpeg: true, error: '没有找到 ffmpeg' };
-  const args = [
-    '-hide_banner', '-loglevel', 'error',
-    '-f', 'gdigrab', '-framerate', '4', '-i', 'desktop',
-    '-vf', 'scale=480:-2', '-q:v', '7',
-    '-f', 'mjpeg', 'pipe:1',
-  ];
+  const args = ['-hide_banner', '-loglevel', 'error'];
+  if (key === 'full') {
+    args.push(
+      '-f', 'lavfi', '-i', 'ddagrab=output_idx=0:framerate=4',
+      '-vf', 'hwdownload,format=bgra,scale=480:-2',
+    );
+  } else {
+    args.push(
+      '-f', 'gdigrab',
+      '-offset_x', String(Math.round(region.x)),
+      '-offset_y', String(Math.round(region.y)),
+      '-video_size', Math.round(region.w) + 'x' + Math.round(region.h),
+      '-framerate', '4', '-i', 'desktop',
+      '-vf', 'scale=480:-2',
+    );
+  }
+  args.push('-q:v', '7', '-f', 'mjpeg', 'pipe:1');
+  preview.key = key;
   const child = spawn(ffmpeg, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let buffer = Buffer.alloc(0);
   child.stdout.on('data', (chunk) => {
@@ -222,6 +242,7 @@ export function stopPreview() {
   }
   preview.child = null;
   preview.frame = null;
+  preview.key = '';
   return { ok: true };
 }
 
@@ -598,8 +619,13 @@ function buildArgs(kind, options) {
   }
   if (mic) args.push('-f', 'dshow', '-i', 'audio=' + mic);
   args.push(
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(crf),
+    // 抓屏是「尽力而为」：机器忙的时候抓不满 fps。ultrafast 是这台机器上实测能跟上
+    // 1772×992@60 的唯一档位（veryfast 只有 ~41fps，成片就是「卡卡的」）。
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(crf),
     '-pix_fmt', 'yuv420p',
+    // 恒定帧率：抓少了的帧由编码器补重复帧，播放器看到的是稳定的 30/60fps 时间轴，
+    // 不会因为 gdigrab 偶尔慢一拍就出现一次 66ms 的空档（那就是卡顿感的来源）。
+    '-fps_mode', 'cfr', '-r', String(fps),
   );
   if (mic) args.push('-c:a', 'aac', '-b:a', '160k');
   args.push('-movflags', '+faststart', '-f', 'mp4', file);

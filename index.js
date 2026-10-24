@@ -411,7 +411,8 @@ async function serveRecorder(req, res) {
     if (op === 'preview') {
       const body = req.method === 'POST' ? await readJsonBody(req, 4 * 1024) : { on: url.searchParams.get('on') !== 'false' };
       const wanted = !(body && body.on === false);
-      const result = wanted ? await startPreview() : stopPreview();
+      const region = body && body.region && typeof body.region === 'object' ? body.region : null;
+      const result = wanted ? await startPreview(region) : stopPreview();
       return replyJson(res, 200, Object.assign({ ok: true, running: wanted }, result));
     }
     if (op === 'pick-region') {

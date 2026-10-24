@@ -13522,9 +13522,10 @@ window.__ModuleLoader__.load({
 
     /** 画质档位直接映射到 x264 的 CRF：越小越清楚、文件越大。 */
     const REC_QUALITIES = {
-      high: { id: 'high', crf: 18 },
-      balanced: { id: 'balanced', crf: 22 },
-      small: { id: 'small', crf: 27 },
+      // 编码器已切到 ultrafast（为了帧率），CRF 相应压 2 格，观感与之前的 veryfast 持平。
+      high: { id: 'high', crf: 16 },
+      balanced: { id: 'balanced', crf: 20 },
+      small: { id: 'small', crf: 25 },
     };
 
     /** 目录选择器由宿主提供（uiWorkspace.pickDirectory），拿不到就退回手填。 */
@@ -13734,7 +13735,8 @@ window.__ModuleLoader__.load({
 
     async function recPreviewHost(on) {
       try {
-        const data = await recCall('preview', { on });
+        // 预览要和录的那一块一致：把当前框选区域一起送过去，Host 用同样的抓取源取帧。
+        const data = await recCall('preview', { on, region: recSnapRegion(recorderState.options.region) });
         if (on && data && data.ok === false) {
           recorderState.notice = data.error ? String(data.error) : recT().recPreviewFailed;
           recNotify();
