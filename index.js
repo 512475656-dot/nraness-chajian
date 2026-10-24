@@ -39,6 +39,24 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, isAbsolute } from 'node:path';
 import { articleImages, collectNews, enrichArticle, newsCatalog, translateTexts } from './news.js';
+import {
+  deleteRecording,
+  diskInfo,
+  listMicrophones,
+  listRecordings,
+  openRecording,
+  pickFolder,
+  pickRegion,
+  previewFrame,
+  recordConfig,
+  recordingStatus,
+  revealRecording,
+  setRecordDir,
+  startPreview,
+  startRecording,
+  stopPreview,
+  stopRecording,
+} from './recorder.js';
 import { collectMembers, collectQuotes, stockCatalog, stockMarkets } from './stocks.js';
 
 /** Services this plugin cannot work without; the loader waits for them before `apply`. */
@@ -47,6 +65,7 @@ export const inject = ['webServer'];
 const MEDIA_ROUTE = '/workbench-media';
 const NEWS_ROUTE = '/workbench-news';
 const STOCK_ROUTE = '/workbench-stocks';
+const RECORD_ROUTE = '/workbench-recorder';
 
 /**
  * Only real media may be served. This route is a background-image loader, not a general
@@ -334,6 +353,99 @@ async function serveStocks(req, res) {
   }
 }
 
+/**
+ * The recording route. A capture is "start" then "stop"; everything else is about the files
+ * that already exist, so the panel can list, play, reveal and delete them without touching
+ * the filesystem itself.
+ *
+ *   GET  ?op=status                          → is a capture running, which file, where is ffmpeg
+ *   GET  ?op=list                            → the recording folder and its videos
+ *   GET  ?op=devices                         → dshow microphone names
+ *   GET  ?op=config                          → the save folder and ffmpeg path
+ *   POST ?op=config { dir }                  → change (and persist) the save folder
+ *   GET  ?op=frame                           → the latest low-res preview JPEG
+ *   POST ?op=preview { on: true|false }      → start / stop the preview process
+ *   POST ?op=pick-region                     → full-screen drag picker → { region } or full
+ *   POST ?op=start  { fps, crf, mic, region }→ begin a capture
+ *   POST ?op=stop                            → finish it and return the file's size
+ *   POST ?op=open | reveal | delete { file } → act on one recording in that folder
+ */
+async function serveRecorder(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') return reply(res, 405, 'GET or POST only');
+  if (!trustedClient(req, 'recorder')) return reply(res, 403, 'missing client marker');
+
+  let url;
+  try {
+    url = new URL(String(req.url || ''), 'http://localhost');
+  } catch {
+    return reply(res, 400, 'bad request url');
+  }
+  const op = url.searchParams.get('op') || 'status';
+
+  try {
+    if (op === 'status') {
+      const disk = await diskInfo();
+      return replyJson(res, 200, Object.assign({ ok: true }, await recordingStatus(), { disk: disk.disk }));
+    }
+    if (op === 'list') {
+      const disk = await diskInfo();
+      return replyJson(res, 200, Object.assign({ ok: true }, await listRecordings(), { disk: disk.disk }));
+    }
+    if (op === 'devices') return replyJson(res, 200, Object.assign({ ok: true }, await listMicrophones()));
+    if (op === 'config') {
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req, 8 * 1024);
+        const changed = await setRecordDir(body && body.dir);
+        const configNow = await recordConfig();
+        return replyJson(res, 200, Object.assign({ ok: true }, configNow, changed.ok ? {} : { ok: false, error: changed.error }));
+      }
+      return replyJson(res, 200, Object.assign({ ok: true }, await recordConfig()));
+    }
+    if (op === 'frame') {
+      // 预览帧是二进制 JPEG，不走 replyJson。没开预览时返回 204，客户端据此显示占位。
+      const frame = previewFrame();
+      if (!frame) { res.writeHead(204, { 'Cache-Control': 'no-store' }); return res.end() }
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': frame.length, 'Cache-Control': 'no-store' });
+      return res.end(frame);
+    }
+    if (op === 'preview') {
+      const body = req.method === 'POST' ? await readJsonBody(req, 4 * 1024) : { on: url.searchParams.get('on') !== 'false' };
+      const wanted = !(body && body.on === false);
+      const result = wanted ? await startPreview() : stopPreview();
+      return replyJson(res, 200, Object.assign({ ok: true, running: wanted }, result));
+    }
+    if (op === 'pick-region') {
+      if (req.method !== 'POST') return reply(res, 405, 'POST only');
+      return replyJson(res, 200, await pickRegion());
+    }
+    if (op === 'pick-folder') {
+      if (req.method !== 'POST') return reply(res, 405, 'POST only');
+      return replyJson(res, 200, await pickFolder());
+    }
+    if (op === 'start') {
+      const body = req.method === 'POST' ? await readJsonBody(req, 32 * 1024) : {};
+      return replyJson(res, 200, await startRecording(body));
+    }
+    if (op === 'stop') return replyJson(res, 200, await stopRecording());
+
+    const body = req.method === 'POST' ? await readJsonBody(req, 32 * 1024) : { file: url.searchParams.get('file') || '' };
+    const file = body && typeof body.file === 'string' ? body.file : '';
+    if (op === 'open') return replyJson(res, 200, openRecording(file));
+    if (op === 'reveal') return replyJson(res, 200, revealRecording(file));
+    if (op === 'delete') {
+      const removed = await deleteRecording(file);
+      // The list comes back with the delete so the panel never has to ask twice.
+      return replyJson(res, 200, Object.assign({}, removed, await listRecordings()));
+    }
+    return reply(res, 404, 'unknown op');
+  } catch (error) {
+    return replyJson(res, 200, {
+      ok: false,
+      error: error && error.message ? error.message : '录屏服务内部错误',
+    });
+  }
+}
+
 export function apply(ctx) {
   const webServer = ctx.webServer
     || (typeof ctx.get === 'function' ? ctx.get('webServer') : undefined);
@@ -356,4 +468,12 @@ export function apply(ctx) {
     path: STOCK_ROUTE,
     handler: (req, res) => { serveStocks(req, res).catch(() => reply(res, 500, 'stocks failed')) },
   }), 'workbench.stock-route');
+
+  // 录屏：屏幕抓取在 Host 侧（Electron 的页面里没有 getDisplayMedia 选择器），
+  // 输出是磁盘上的 MP4，所以渲染进程只负责开始/停止和列文件。
+  ctx.effect(() => webServer.register({
+    kind: 'prefix',
+    path: RECORD_ROUTE,
+    handler: (req, res) => { serveRecorder(req, res).catch(() => reply(res, 500, 'recorder failed')) },
+  }), 'workbench.record-route');
 }

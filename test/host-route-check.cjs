@@ -79,20 +79,21 @@ async function main() {
   };
   host.apply(ctx);
 
-  await check('all three routes are registered as prefixes', () => {
-    assert(routes.length === 3, 'expected three routes, saw ' + routes.length);
+  await check('all four routes are registered as prefixes', () => {
+    assert(routes.length === 4, 'expected four routes, saw ' + routes.length);
     for (const route of routes) {
       assert(route.kind === 'prefix', 'route ' + route.path + ' is not a prefix route');
       assert(typeof route.handler === 'function', 'route ' + route.path + ' has no handler');
     }
     const paths = routes.map((route) => route.path).sort();
-    assert(paths[0] === '/workbench-media' && paths[1] === '/workbench-news' && paths[2] === '/workbench-stocks',
+    assert(paths[0] === '/workbench-media' && paths[1] === '/workbench-news'
+      && paths[2] === '/workbench-recorder' && paths[3] === '/workbench-stocks',
       'unexpected routes: ' + paths.join(','));
   });
 
   await check('registration is bound to the plugin effect, not run bare', () => {
     // Every registration must sit inside ctx.effect, or a reload would leak the old route.
-    assert(effects.length === 3, 'expected three effect registrations, saw ' + effects.length);
+    assert(effects.length === 4, 'expected four effect registrations, saw ' + effects.length);
   });
 
   // --- serve the captured handlers -------------------------------------------------
@@ -118,6 +119,17 @@ async function main() {
   const base = 'http://127.0.0.1:' + server.address().port;
   const headers = { 'x-workbench-client': 'news' };
   const stockHeaders = { 'x-workbench-client': 'stock' };
+  const recorderHeaders = { 'x-workbench-client': 'recorder' };
+
+  await check('the recorder route reports its status and refuses a foreign caller', async () => {
+    const bare = await fetch(base + '/workbench-recorder?op=status');
+    assert(bare.status === 403, 'a request without the recorder marker was answered with ' + bare.status);
+    const response = await fetch(base + '/workbench-recorder?op=status', { headers: recorderHeaders });
+    const body = await response.json();
+    assert(body.ok === true, 'status did not answer ok: ' + JSON.stringify(body));
+    assert(typeof body.dir === 'string' && body.dir.length > 0, 'status carries no recording folder');
+    assert(body.recording === false, 'a fresh status already reports a running capture');
+  });
 
   try {
     // --- the same-origin fence ----------------------------------------------------

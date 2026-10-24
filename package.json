@@ -1,19 +1,20 @@
 {
   "name": "@local/dsh-workbench",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Apple-style multi-pane Workbench for the DSH Web GUI: custom project groups, a conversation console (对话后台), a node-based mind-map notebook (6 structure presets, nodes carrying text and pictures), a daily-news reader (global headlines plus your own keyword topics, kept for 7 days), node code preview, and a per-round progress + token meter.",
+  "description": "Apple-style multi-pane Workbench for the DSH Web GUI: custom project groups, a conversation console (对话后台), a node-based mind-map notebook (6 structure presets, nodes carrying text and pictures), a daily-news reader (global headlines plus your own keyword topics, kept for 7 days), a market board, a screen recorder (the whole screen straight to MP4 through ffmpeg, optional microphone, files kept in your Videos folder), node code preview, and a per-round progress + token meter.",
   "icon": "./icon.svg",
   "meta": {
     "title": "工作台 Workbench",
-    "description": "苹果风格的工作台面板：多个自定义项目组、对话后台、框架笔记（节点式思维导图，6 种结构预设，节点里可写文字、贴图片），以及每日新闻模块（当日全球大事件 + 自定义关键词，最多保留 7 天、条数 10–100 可调）；另有对话节点树、对话轮次汇总与资源仓库（逐轮用量与 Token 计量）。"
+    "description": "苹果风格的工作台面板：多个自定义项目组、对话后台、框架笔记（节点式思维导图，6 种结构预设，节点里可写文字、贴图片）、每日新闻模块（当日全球大事件 + 自定义关键词，最多保留 7 天、条数 10–100 可调）、股票市场看板，以及录屏模块（整块屏幕直接录成 MP4，可选麦克风，文件落在「视频」目录里，可播放 / 打开文件夹 / 删除）；另有对话节点树、对话轮次汇总与资源仓库（逐轮用量与 Token 计量）。"
   },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./news": "./news.js",
     "./stocks": "./stocks.js",
+    "./recorder": "./recorder.js",
     "./net": "./net.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
@@ -23,6 +24,7 @@
     "client.js",
     "news.js",
     "stocks.js",
+    "recorder.js",
     "net.js",
     "cordis.patch.yml",
     "icon.svg",

@@ -12,7 +12,9 @@
  *     `contextBreakdown` registered by the shipped token meter.
  * The plugin owns no session data and never writes to the log. Its own user
  * state (workbench type, project groups, layout preset, custom notes) is
- * browser-profile state in `localStorage`.
+ * browser-profile state in `localStorage`. Screen recordings are not stored
+ * here at all: the Host captures them straight to MP4 files on disk, and this
+ * half only drives that route and lists the folder.
  *
  * Nothing is imported from another Harness Client package: React arrives from
  * the browser module table and every control is written here against theme
@@ -654,7 +656,8 @@ window.__ModuleLoader__.load({
 .wsb-stack>.wsb-screen[data-role="home"]{z-index:1}
 .wsb-stack>.wsb-screen[data-role="console"],
 .wsb-stack>.wsb-screen[data-role="news"],
-.wsb-stack>.wsb-screen[data-role="stock"]{z-index:2}
+.wsb-stack>.wsb-screen[data-role="stock"],
+.wsb-stack>.wsb-screen[data-role="record"]{z-index:2}
 /* 框架笔记 is its own full-screen window above the home screen, like the console. */
 .wsb-stack>.wsb-screen[data-role="notes"]{z-index:2}
 /* Once the console has settled, the home screen must stop existing visually: its
@@ -1088,6 +1091,7 @@ window.__ModuleLoader__.load({
    毛玻璃就只是在磨一块纯色，"透明效果没同步"就是这么来的。
    （这段 CSS 会被拼进一个 JS 模板字符串，所以这里不能出现反引号。） */
 .wsb-screen[data-role="notes"] .wsb-root{background:transparent}
+.wsb-screen[data-role="record"] .wsb-root{background:transparent}
 .wsb-noteRoot{outline:none;padding:calc(var(--dsh-frame-top-clearance,0px) + 12px) 14px 12px;gap:10px}
 /* 顶栏的层级必须高于下面的舞台。
    舞台原先也是 z-index:1，于是"谁在上"由 DOM 顺序决定 —— 舞台在后，就画在顶栏之上，顶栏里
@@ -2024,7 +2028,6 @@ window.__ModuleLoader__.load({
   .wsb-tickerTrack{animation:none}
   .wsb-item,.wsb-hotCard,.wsb-topic,.wsb-linkBtn,.wsb-iconBtn,.wsb-split:before{transition:none}
   .wsb-item:hover,.wsb-hotCard:hover,.wsb-topic:hover,.wsb-iconBtn:hover{transform:none}
-}
   /* 行情看板: 数字换位时的过渡和走势线的描绘都停掉 —— 一个每秒闪动的价格不是一个能读的价格. */
   .wsb-stkTiles,.wsb-stkTile,.wsb-stkSpark,.wsb-stkMarket,.wsb-stkTable td,.wsb-stkTable th{transition:none}
   .wsb-stkTile{animation:none}
@@ -2260,7 +2263,8 @@ window.__ModuleLoader__.load({
    它只有十几像素宽, 套同一个位移会被放大到夸张. 折射由主体那层负责. */
 [data-glass="thick"] .wsb-lens{padding:12px;
   -webkit-backdrop-filter:blur(0.5px) saturate(215%) contrast(1.1) brightness(1.08);
-  backdrop-filter:blur(0.5px) saturate(215%) contrast(1.1) brightness(1.08);
+  backdrop-filter:blur(0.5px) saturate(215%) contrast(1.1) brightness(1.08)}
+
 /* 薄雾与实心不折射: 它们要的是干净, 不是塑料 */
 [data-glass="thin"] .wsb-card,[data-glass="thin"] .wsb-glass,
 [data-glass="solid"] .wsb-card,[data-glass="solid"] .wsb-glass{
@@ -2376,6 +2380,136 @@ window.__ModuleLoader__.load({
   box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 20%,transparent);
   -webkit-backdrop-filter:blur(18px) saturate(150%);
   backdrop-filter:blur(18px) saturate(150%)}
+
+/* ==== 录屏 ====
+   一屏两栏：左边是舞台（实时预览 / 成片 / 空白），右边是设置与录制库。
+   表面颜色全部走宿主 token，只有录制红点是自己的颜色 —— 那个点必须一眼认得出。 */
+.wsb-rec{position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;padding:10px 14px 14px;box-sizing:border-box}
+.wsb-recHead{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.wsb-recSub{display:block;font-size:11.5px;font-weight:400;opacity:.62;margin-top:2px}
+.wsb-recSpacer{flex:1 1 auto}
+.wsb-recState{display:inline-flex;align-items:center;gap:7px;font-size:12px;padding:4px 10px;border-radius:999px;
+  background:color-mix(in srgb,#fff 8%,transparent);border:1px solid color-mix(in srgb,#fff 12%,transparent)}
+.wsb-recDot{width:8px;height:8px;border-radius:50%;background:color-mix(in srgb,currentColor 45%,transparent);flex:0 0 auto}
+.wsb-recDot[data-on="true"]{background:#ff453a;box-shadow:0 0 0 4px rgba(255,69,58,.2)}
+.wsb-recBody{display:flex;gap:12px;flex:1 1 auto;min-height:0}
+.wsb-recMain{display:flex;flex-direction:column;gap:10px;flex:1 1 auto;min-width:0;min-height:0}
+.wsb-recStage{position:relative;flex:1 1 auto;min-height:200px;border-radius:16px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(120% 100% at 50% 0%,color-mix(in srgb,#fff 7%,transparent),transparent 72%),rgba(0,0,0,.3);
+  border:1px solid color-mix(in srgb,#fff 12%,transparent)}
+.wsb-recVideo{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.wsb-recBadge{position:absolute;left:12px;top:12px;display:flex;align-items:center;gap:8px;
+  padding:5px 10px;border-radius:999px;background:rgba(12,12,14,.72);color:#fff;font-size:12px;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.wsb-recBadge .wsb-recDot{background:#ff453a;box-shadow:0 0 0 4px rgba(255,69,58,.22)}
+.wsb-recTicker{font-variant-numeric:tabular-nums;opacity:.9}
+.wsb-recBlank{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;max-width:min(440px,86%);padding:18px}
+.wsb-recGlyph{width:54px;height:54px;opacity:.55}
+.wsb-recBlank b{font-size:15px;font-weight:600}
+.wsb-recBlank span{font-size:12.5px;line-height:1.55;opacity:.7}
+.wsb-recBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
+.wsb-recGo{appearance:none;border:0;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  padding:9px 16px;border-radius:999px;background:#ff453a;color:#fff;
+  font-weight:600;font-size:13px;line-height:1.1;
+  box-shadow:0 8px 22px rgba(255,69,58,.32)}
+.wsb-recGo .wsb-recDot{background:#fff;opacity:.92;width:9px;height:9px}
+.wsb-recGo:hover{filter:brightness(1.06)}
+.wsb-recStop{appearance:none;cursor:pointer;padding:9px 16px;border-radius:999px;
+  background:color-mix(in srgb,#fff 12%,transparent);color:var(--dsw-alias-label-primary);
+  font-weight:600;font-size:13px;line-height:1.1;border:1px solid color-mix(in srgb,#fff 18%,transparent)}
+.wsb-recPrimary{border-color:color-mix(in srgb,#ff453a 55%,transparent)!important}
+.wsb-recTime{font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;letter-spacing:.02em;margin-left:2px}
+.wsb-recMeta{font-size:11.5px;opacity:.6}
+.wsb-recWait{font-size:12.5px;opacity:.75}
+.wsb-recError{margin:0;padding:8px 10px;border-radius:10px;font-size:12.5px;line-height:1.5;
+  color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 32%,transparent)}
+.wsb-recNotice{font-size:12.5px;opacity:.72;padding:2px 2px}
+.wsb-recSide{display:flex;flex-direction:column;gap:10px;flex:0 0 286px;min-width:0;min-height:0;overflow:auto}
+.wsb-recCard{display:flex;flex-direction:column;gap:9px;padding:11px 12px;border-radius:14px;
+  background:color-mix(in srgb,#fff 6%,transparent);border:1px solid color-mix(in srgb,#fff 10%,transparent);flex:0 0 auto}
+.wsb-recLibrary{flex:1 1 auto;min-height:0}
+.wsb-recCardTitle{font-size:12.5px;font-weight:600}
+.wsb-recRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.wsb-recLabel{font-size:12px;opacity:.72}
+.wsb-recToggles{display:flex;flex-direction:column;gap:7px}
+.wsb-recToggle{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}
+.wsb-recToggle input{width:15px;height:15px;accent-color:#ff453a;cursor:pointer}
+.wsb-recToggle input:disabled{cursor:default;opacity:.5}
+.wsb-recHint{font-size:11.5px;line-height:1.5;opacity:.55}
+.wsb-recList{display:flex;flex-direction:column;gap:5px;overflow:auto;min-height:0}
+.wsb-recItem{display:flex;align-items:center;gap:4px;border-radius:10px;padding:2px;border:1px solid transparent}
+.wsb-recItem[data-on="true"]{background:color-mix(in srgb,#fff 9%,transparent);border-color:color-mix(in srgb,#fff 14%,transparent)}
+.wsb-recItemMain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;text-align:left;
+  appearance:none;background:none;border:0;cursor:pointer;color:inherit;padding:5px 7px;border-radius:8px;font:inherit}
+.wsb-recItemMain b{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wsb-recItemMain span{font-size:11px;opacity:.55}
+.wsb-recItemMain:hover{background:color-mix(in srgb,#fff 7%,transparent)}
+.wsb-recMini{appearance:none;background:none;border:0;cursor:pointer;color:inherit;opacity:.55;
+  width:24px;height:24px;border-radius:7px;font-size:12px;line-height:1}
+.wsb-recMini:hover{opacity:1;background:color-mix(in srgb,#fff 10%,transparent)}
+.wsb-recMini[data-tone="danger"]:hover{color:var(--dsw-alias-state-error-primary)}
+.wsb-recEmpty{font-size:12px;line-height:1.55;opacity:.5;padding:4px 2px}
+.wsb-recLiveBox{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:20px}
+.wsb-recBig{font-variant-numeric:tabular-nums;font-size:56px;font-weight:600;letter-spacing:.02em;line-height:1}
+.wsb-recBigLabel{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.wsb-recLiveHint{max-width:420px}
+.wsb-recResult{display:flex;flex-direction:column;gap:8px;padding:18px 20px;width:min(560px,90%)}
+.wsb-recResult>b{font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.55}
+.wsb-recResultName{font-size:15px;font-weight:600;word-break:break-all}
+.wsb-recPath{font-size:11.5px;line-height:1.5;opacity:.55;word-break:break-all}
+.wsb-recSelect{max-width:170px;font:inherit;font-size:12px;padding:4px 6px;border-radius:8px;
+  color:var(--dsw-alias-label-primary);background:color-mix(in srgb,#fff 8%,transparent);
+  border:1px solid color-mix(in srgb,#fff 14%,transparent)}
+.wsb-recSelect:disabled{opacity:.5}
+.wsb-recDivider{height:1px;background:color-mix(in srgb,#fff 10%,transparent);margin:2px 0}
+.wsb-rec-notice{font-size:12.5px;opacity:.75;padding:2px 2px}
+.wsb-recError b{font-weight:600}
+
+/* ==== 录屏 · 三块可拉伸的区域 ==== */
+.wsb-recPanels{position:relative;display:grid;grid-template-columns:var(--rec-left-w,63%) 8px minmax(0,1fr);
+  flex:1 1 auto;min-height:0;min-width:0}
+.wsb-recCol{display:grid;grid-template-rows:var(--rec-preview-h,58%) 8px minmax(0,1fr);min-height:0;min-width:0}
+.wsb-recPanel{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;padding:10px 12px;border-radius:14px;
+  background:color-mix(in srgb,#fff 5%,transparent);border:1px solid color-mix(in srgb,#fff 10%,transparent)}
+.wsb-recPanelHead{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;flex:0 0 auto}
+.wsb-recPanelSpacer{flex:1 1 auto}
+.wsb-recScroll{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:9px;padding-right:2px}
+.wsb-recSplitV,.wsb-recSplitH{position:relative;display:flex;align-items:center;justify-content:center;
+  touch-action:none;z-index:2}
+.wsb-recSplitV{width:8px;cursor:col-resize}
+.wsb-recSplitH{height:8px;cursor:row-resize}
+.wsb-recSplitV i{width:3px;height:42px;border-radius:2px;background:color-mix(in srgb,#fff 18%,transparent)}
+.wsb-recSplitH i{height:3px;width:42px;border-radius:2px;background:color-mix(in srgb,#fff 18%,transparent)}
+.wsb-recSplitV:hover i,.wsb-recSplitH:hover i{background:var(--wsb-c1,#5aa9ff)}
+.wsb-recPanelPreview .wsb-recStage{background:radial-gradient(120% 100% at 50% 0%,color-mix(in srgb,#fff 6%,transparent),transparent 70%),rgba(0,0,0,.42)}
+.wsb-recFrame{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.wsb-recFrameEmpty{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;
+  font-size:12px;opacity:.7;padding:14px}
+.wsb-recStats{display:flex;gap:10px;flex:1 1 auto;min-height:0}
+.wsb-recStat{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:6px;padding:9px 10px;border-radius:10px;
+  background:color-mix(in srgb,#fff 5%,transparent);border:1px solid color-mix(in srgb,#fff 8%,transparent)}
+.wsb-recStatLabel{font-size:11px;opacity:.6}
+.wsb-recStatValue{font-size:20px;line-height:1.1;font-variant-numeric:tabular-nums}
+.wsb-recStatBar{height:4px;border-radius:2px;background:color-mix(in srgb,#fff 10%,transparent);overflow:hidden}
+.wsb-recStatBar i{display:block;height:100%;background:var(--dsw-alias-brand-primary,#5aa9ff);transition:width .3s ease}
+.wsb-recRing{display:flex;align-items:center;gap:8px;margin-top:auto}
+.wsb-recRingFace{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.wsb-recRingFace span{width:34px;height:34px;border-radius:50%;background:#141416;display:flex;align-items:center;
+  justify-content:center;font-size:10px;font-variant-numeric:tabular-nums}
+.wsb-recRingLegend{display:flex;flex-direction:column;gap:2px;font-size:10.5px;opacity:.65;line-height:1.3}
+.wsb-recSpark{width:100%;height:46px;color:var(--dsw-alias-brand-primary,#5aa9ff);margin-top:auto}
+.wsb-recSwitch{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:400;opacity:.92;cursor:pointer}
+.wsb-recSwitch input{width:15px;height:15px;accent-color:#34c759;cursor:pointer}
+.wsb-recInput{flex:1 1 auto;min-width:0;font:inherit;font-size:12px;padding:5px 8px;border-radius:8px;
+  color:var(--dsw-alias-label-primary);background:color-mix(in srgb,#fff 7%,transparent);
+  border:1px solid color-mix(in srgb,#fff 14%,transparent)}
+.wsb-recDirRow{display:flex;gap:6px;align-items:center}
+.wsb-recRowBtns{display:flex;gap:6px}
+.wsb-recResultLine{display:flex;flex-direction:column;gap:2px;font-size:11.5px;flex:0 0 auto}
+.wsb-recResultLine b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:900px){.wsb-recSide{flex:0 0 240px}}
 
 `;
 
@@ -2597,6 +2731,47 @@ window.__ModuleLoader__.load({
 
         // ---- 股票市场 (Stock market) ----
         kindStock: '股票市场',
+
+        // ---- 录屏 (Screen recorder) ----
+        kindRecord: '录屏',
+        recTitle: '录屏', recSubHint: '主显示器 · 直接存成 MP4',
+        recStart: '开始录屏', recStop: '停止录制', recAgain: '再录一段',
+        recStarting: '正在启动…', recStopping: '正在收尾…', recLive: '录制中',
+        recReady: '已完成', recIdle: '就绪',
+        recOptions: '录制设置', recFps: '帧率', recQuality: '画质',
+        recQHigh: '高清', recQBalanced: '均衡', recQSmall: '小文件',
+        recMic: '麦克风', recMicOff: '不录声音',
+        recSaveDir: '保存到', recOpenFolder: '打开文件夹', recPlay: '播放', recDelete: '删除',
+        recShowInFolder: '在文件夹中显示',
+        recLibrary: '录制库', recItems: '段',
+        recNoLibrary: '还没有录制。录完的文件会直接出现在上面的目录里。',
+        recBlankTitle: '把屏幕录下来',
+        recBlankHint: '点「开始录屏」，主显示器会被录进一个 MP4 文件。录制中可以切到别的面板做事，回来点「停止录制」就收尾。',
+        recRecordingHint: '正在录制主显示器。停止后才会写回完整索引，所以这一段暂时不在库里。',
+        recSaveNote: '文件直接存成 MP4（H.264），双击就能播，剪映 / 微信 / 播放器都认。',
+        recSysAudioNote: '这一版只录麦克风：系统声音需要一块「环回」录音设备，Windows 默认没有。',
+        recNoFfmpeg: '没有找到 ffmpeg，录屏需要它。',
+        recFfmpegHint: '把 ffmpeg.exe 放到 ~/.dsh/dsh-workbench-tools/ 下，或用 DSH_FFMPEG 指定路径，然后重启 DSH。',
+        recNeedRestart: '录屏的 Host 路由还没生效。',
+        recRestartHint: '录屏在 Host 半（/workbench-recorder），Host 代码只在 DSH 启动时读一次。请重启一次 DSH，这一页就能用。',
+        recHostFailed: '和 Host 的录屏路由通信失败。',
+        recDeleteFailed: '删不掉这个文件。',
+        recFailed: '录制没有启动。',
+        recEmpty: '这次没有录到内容。',
+        recStoppedEarly: '录制意外结束了：多半是框选区域超出屏幕边界，或这个尺寸不被编码器接受。',
+        recDuration: '时长', recSize: '大小',
+        recPreview: '预览', recPreviewOn: '开', recPreviewOff: '关',
+        recPreviewHint: '录制时显示的低分辨率实时画面（4fps）；关掉会停掉 Host 的预览进程。',
+        recPreviewLoading: '正在取预览…', recPreviewOffHint: '预览已关闭', recPreviewFailed: '预览没能启动',
+        recPreviewIdleHint: '按「开始录屏」后，这里才显示实时画面',
+        recStats: '录制统计', recDisk: '保存盘剩余', recDiskUsed: '已用', recDiskFree: '剩余',
+        recDiskUnknown: '读不到磁盘信息',
+        recFileSize: '当前文件', recAudio: '录制声音',
+        recChoose: '选择…', recChoosing: '选择中…', recDirChanged: '保存路径已更新', recDirFailed: '这个路径用不了',
+        recRegion: '录制区域', recRegionPick: '框选…', recRegionPicking: '框选中…', recRegionReset: '整屏',
+        recRegionFullLabel: '整个主显示器', recRegionCustom: '自定义区域',
+        recRegionFull: '已切回整个屏幕', recRegionCancelled: '已取消框选', recRegionPicked: '已选定区域',
+        recRegionHint: '框选会在所有屏幕上打开一个覆盖层（可以跨显示器）：拖一个框、松手确定，Esc 取消。',
         stockTitle: '股票市场', stockSubHint: '全球股市最新行情 · 点选你要看的市场',
         stockRefresh: '刷新', stockRefreshing: '刷新中',
         stockUpdated: '更新于', stockJustNow: '刚刚', stockMinAgo: ' 分钟前', stockHourAgo: ' 小时前',
@@ -2852,6 +3027,47 @@ window.__ModuleLoader__.load({
 
         // ---- Stock market ----
         kindStock: 'Stock market',
+
+        // ---- Screen recorder ----
+        kindRecord: 'Screen recorder',
+        recTitle: 'Screen recorder', recSubHint: 'the primary display · saved straight to MP4',
+        recStart: 'Start recording', recStop: 'Stop', recAgain: 'Record another',
+        recStarting: 'Starting…', recStopping: 'Finishing…', recLive: 'Recording',
+        recReady: 'Done', recIdle: 'Idle',
+        recOptions: 'Recording', recFps: 'Frame rate', recQuality: 'Quality',
+        recQHigh: 'High', recQBalanced: 'Balanced', recQSmall: 'Small',
+        recMic: 'Microphone', recMicOff: 'No sound',
+        recSaveDir: 'Saved to', recOpenFolder: 'Open folder', recPlay: 'Play', recDelete: 'Delete',
+        recShowInFolder: 'Show in folder',
+        recLibrary: 'Recordings', recItems: 'clips',
+        recNoLibrary: 'Nothing recorded yet. Finished takes appear in the folder above.',
+        recBlankTitle: 'Record the screen',
+        recBlankHint: 'Hit Start and the primary display is captured into one MP4. You can switch panels while it records; come back and hit Stop to finish.',
+        recRecordingHint: 'Recording the primary display. The index is written on stop, so this take is not in the library yet.',
+        recSaveNote: 'The file is already MP4 (H.264): double-click to play; Premiere, WeChat and every player read it.',
+        recSysAudioNote: 'This version records the microphone only: system audio needs a loopback capture device, which Windows does not ship.',
+        recNoFfmpeg: 'ffmpeg was not found, and recording needs it.',
+        recFfmpegHint: 'Drop ffmpeg.exe into ~/.dsh/dsh-workbench-tools/ (or point DSH_FFMPEG at it), then restart DSH.',
+        recNeedRestart: 'The recording route is not live yet.',
+        recRestartHint: 'Recording lives in the Host half (/workbench-recorder), and Host code is read once at DSH start. Restart DSH once and this page works.',
+        recHostFailed: 'Could not reach the Host recording route.',
+        recDeleteFailed: 'That file could not be deleted.',
+        recFailed: 'Recording did not start.',
+        recEmpty: 'This take produced nothing.',
+        recStoppedEarly: 'Recording stopped on its own: usually the area is outside the screen, or the size was rejected.',
+        recDuration: 'length', recSize: 'size',
+        recPreview: 'Preview', recPreviewOn: 'on', recPreviewOff: 'off',
+        recPreviewHint: 'Low-res live preview while recording (4fps); turning it off stops the Host preview process.',
+        recPreviewLoading: 'Grabbing a frame…', recPreviewOffHint: 'Preview is off', recPreviewFailed: 'The preview did not start',
+        recPreviewIdleHint: 'The live picture appears once recording starts',
+        recStats: 'Stats', recDisk: 'Disk free', recDiskUsed: 'used', recDiskFree: 'free',
+        recDiskUnknown: 'Disk counters unavailable',
+        recFileSize: 'File size', recAudio: 'Record audio',
+        recChoose: 'Choose…', recChoosing: 'Choosing…', recDirChanged: 'Save folder updated', recDirFailed: 'That folder cannot be used',
+        recRegion: 'Capture area', recRegionPick: 'Select…', recRegionPicking: 'Selecting…', recRegionReset: 'Whole screen',
+        recRegionFullLabel: 'the whole primary display', recRegionCustom: 'custom area',
+        recRegionFull: 'Back to the whole screen', recRegionCancelled: 'Selection cancelled', recRegionPicked: 'Area selected',
+        recRegionHint: 'Selecting opens an overlay across every display (a box may span two screens): drag, release to apply, Esc to cancel.',
         stockTitle: 'Stock market', stockSubHint: "the latest quote from every market · pick what you watch",
         stockRefresh: 'Refresh', stockRefreshing: 'Refreshing',
         stockUpdated: 'updated', stockJustNow: 'just now', stockMinAgo: ' min ago', stockHourAgo: ' h ago',
@@ -3512,7 +3728,7 @@ window.__ModuleLoader__.load({
 
     /** 英文缩写: 中文界面悬停时显示, 与自定义名字无关(由 kind 决定). */
     const MODULE_ABBR = {
-      game: 'DEV', news: 'NEWS', notebook: 'NOTES', research: 'LAB', stock: 'MKT', blank: 'BLANK',
+      game: 'DEV', news: 'NEWS', notebook: 'NOTES', research: 'LAB', stock: 'MKT', blank: 'BLANK', record: 'REC',
     };
 
     /** 便签 colours: a pastel body with an ink dark enough to read on it. */
@@ -4430,6 +4646,12 @@ window.__ModuleLoader__.load({
           stock: defaultStockSettings(),
           desc: '全球股市行情预览：A股 / 港股 / 美股 / 亚太 / 欧洲 / 美洲共 34 个指数的最新价格、涨跌与日内走势。',
         },
+        {
+          // Standalone like the notebook: it records the screen, not a conversation.
+          id: newId('mod'), kind: 'record', name: '录屏', accent: MODULE_ACCENTS[4], preset: 'triple',
+          sessionId: undefined, created: Date.now() + 4,
+          desc: '把整个屏幕 / 窗口 / 标签页录成 WebM：麦克风与系统声音可混音，录完能预览、下载，并留在录制库里。',
+        },
       ];
     }
 
@@ -4469,6 +4691,7 @@ window.__ModuleLoader__.load({
       // nothing has to be offered; the flags exist so a *deleted* module stays deleted.
       base.newsSeeded = true;
       base.stockSeeded = true;
+      base.recordSeeded = true;
       return base;
     }
 
@@ -4579,12 +4802,14 @@ window.__ModuleLoader__.load({
       // the difference is the whole point of this flag, so it is read from the raw input.
       state.newsSeeded = Boolean(parsed && parsed.newsSeeded === true);
       state.stockSeeded = Boolean(parsed && parsed.stockSeeded === true);
+      state.recordSeeded = Boolean(parsed && parsed.recordSeeded === true);
 
       if (!Array.isArray(state.modules) || state.modules.length === 0) state.modules = defaultModules();
       // 自动编号后缀去掉: "框架笔记 4" → "框架笔记". 只对已知的类型名生效, 用户自己起的名字不动.
       const autoBases = [TEXT.zh.kindGame, TEXT.zh.kindNews, TEXT.zh.kindNotebook, TEXT.zh.kindResearch,
-        TEXT.zh.kindStock,
+        TEXT.zh.kindStock, TEXT.zh.kindRecord,
         TEXT.en.kindGame, TEXT.en.kindNews, TEXT.en.kindNotebook, TEXT.en.kindResearch, TEXT.en.kindStock,
+        TEXT.en.kindRecord,
         TEXT.zh.newModule, TEXT.en.newModule];
       state.modules = state.modules.map((module) => {
         const name = typeof module.name === 'string' ? module.name : '';
@@ -4606,7 +4831,7 @@ window.__ModuleLoader__.load({
         return {
           id: module.id,
           kind: kind === 'research' || kind === 'game' || kind === 'blank' || kind === 'notebook'
-            || kind === 'news' || kind === 'stock' ? kind : 'blank',
+            || kind === 'news' || kind === 'stock' || kind === 'record' ? kind : 'blank',
           // 框架笔记 is standalone: it never carries a session binding, and it always has a tree.
           noteRoot: kind === 'notebook' ? noteTreeOf(module) : undefined,
           noteStyle: kind === 'notebook' ? noteStyleOf(module) : undefined,
@@ -4625,7 +4850,7 @@ window.__ModuleLoader__.load({
           // A notebook is standalone, so any stale binding is dropped with the upgrade.
           // 每日新闻 and 股票市场 are standalone for the same reason: they read the network, not a
           // session — so a stale binding on either is dropped as well.
-          sessionId: wasDefaultResearch || kind === 'news' || kind === 'stock' ? undefined
+          sessionId: wasDefaultResearch || kind === 'news' || kind === 'stock' || kind === 'record' ? undefined
             : (typeof module.sessionId === 'string' && module.sessionId ? module.sessionId : undefined),
           // 轨迹横条: off unless the user turned it on; the height is clamped on read.
           trailOpen: module.trailOpen === true,
@@ -4747,6 +4972,19 @@ window.__ModuleLoader__.load({
             sessionId: undefined, created: Date.now() + state.modules.length,
             stock: defaultStockSettings(),
             desc: '全球股市行情预览：A股 / 港股 / 美股 / 亚太 / 欧洲 / 美洲共 34 个指数的最新价格、涨跌与日内走势。',
+          });
+        }
+      }
+      // 录屏 gets the same one-time offer, for the same reason and with the same guarantee: a flag
+      // that survives deletion, so removing it is final.
+      if (state.recordSeeded !== true) {
+        state.recordSeeded = true;
+        if (!state.modules.some((module) => module.kind === 'record')) {
+          state.modules.push({
+            id: 'mod-screen-recorder',
+            kind: 'record', name: '录屏', accent: MODULE_ACCENTS[4], preset: 'triple',
+            sessionId: undefined, created: Date.now() + state.modules.length,
+            desc: '把整个屏幕 / 窗口 / 标签页录成 WebM：麦克风与系统声音可混音，录完能预览、下载，并留在录制库里。',
           });
         }
       }
@@ -6769,6 +7007,14 @@ window.__ModuleLoader__.load({
       stock: [
         'M3 13L8 8L13 13L18 8L21 11',
         'M3 16H21',
+      ],
+      /* 录屏: a screen with the record marker squared off in the middle. A square rather than a
+         circle on purpose — this set only allows 0/45/90° segments and whole-unit coordinates, and
+         a stroked circle at this size reads as a smudge anyway. The outer frame is 18 × 14, so it
+         spans the same 18 live units as every other mark. */
+      record: [
+        'M3 5H21V19H3Z',
+        'M9 9H15V15H9Z',
       ],
       research: [
         'M7 3H21L17 7H3Z',
@@ -13254,6 +13500,910 @@ window.__ModuleLoader__.load({
 
     //#endregion
 
+    //#region 录屏 (screen recorder)
+
+    /**
+     * 录屏模块的客户端半。
+     *
+     * 抓屏/编码在 Host（recorder.js）：Electron 窗口里没有 getDisplayMedia 选择器，所以页面
+     * 只负责「开始 / 停止」、预览、设置与统计。这一屏按三块可拉伸的区域组织：
+     *
+     *   1. 预览：Host 用 gdigrab 生成的低分辨率 MJPEG 流（4fps / 480px），可以整个关掉 ——
+     *      关掉后 Host 那边的预览进程也会停，不占 CPU。
+     *   2. 设置：帧率 / 画质 / 是否录音 / 保存路径（可挑目录）/ 录制区域（可框选）。
+     *   3. 统计：录制时长、保存盘的占用环、当前文件大小的走势图。
+     *
+     * 分割条用指针事件拖动，比例存在 localStorage，下次打开还是这个布局。
+     */
+
+    const REC_ROUTE = '/workbench-recorder';
+    const REC_OPTIONS_KEY = 'dsh-workbench.v3.recorder.options';
+    const REC_PANEL_KEY = 'dsh-workbench.v3.recorder.panel';
+
+    /** 画质档位直接映射到 x264 的 CRF：越小越清楚、文件越大。 */
+    const REC_QUALITIES = {
+      high: { id: 'high', crf: 18 },
+      balanced: { id: 'balanced', crf: 22 },
+      small: { id: 'small', crf: 27 },
+    };
+
+    /** 目录选择器由宿主提供（uiWorkspace.pickDirectory），拿不到就退回手填。 */
+    let recPickDirectory = null;
+
+    const recorderState = {
+      // idle → starting → live → stopping → ready
+      phase: 'idle',
+      error: '',
+      notice: '',
+      startedAt: 0,
+      size: 0,
+      activeFile: '',
+      result: null,
+      library: [],
+      dir: '',
+      ffmpeg: '',
+      devices: [],
+      devicesLoaded: false,
+      needsRestart: false,
+      stale: false,
+      disk: null,
+      busy: '',
+      samples: [],
+      options: { fps: 30, quality: 'balanced', mic: '', preview: true, region: null },
+      panel: { leftW: 63, previewH: 58 },
+    };
+
+    function recT() {
+      return TEXT[langStore.getSnapshot()] || TEXT.zh;
+    }
+
+    const recListeners = new Set();
+
+    function recNotify() {
+      for (const listener of Array.from(recListeners)) safe(() => listener());
+    }
+
+    function recSubscribe(listener) {
+      recListeners.add(listener);
+      return () => { recListeners.delete(listener) };
+    }
+
+    function recLoadOptions() {
+      try {
+        const raw = JSON.parse(window.localStorage.getItem(REC_OPTIONS_KEY) || 'null');
+        if (raw && typeof raw === 'object') {
+          if (raw.fps === 30 || raw.fps === 60) recorderState.options.fps = raw.fps;
+          if (REC_QUALITIES[raw.quality]) recorderState.options.quality = raw.quality;
+          if (typeof raw.mic === 'string') recorderState.options.mic = raw.mic;
+          if (typeof raw.preview === 'boolean') recorderState.options.preview = raw.preview;
+          if (raw.region && typeof raw.region === 'object'
+            && Number(raw.region.w) >= 16 && Number(raw.region.h) >= 16) {
+            recorderState.options.region = {
+              x: Math.max(0, Math.round(Number(raw.region.x) || 0)),
+              y: Math.max(0, Math.round(Number(raw.region.y) || 0)),
+              w: Math.round(Number(raw.region.w)),
+              h: Math.round(Number(raw.region.h)),
+            };
+          }
+        }
+      } catch { /* 读不到就用默认值 */ }
+    }
+
+    function recSaveOptions() {
+      try {
+        window.localStorage.setItem(REC_OPTIONS_KEY, JSON.stringify(recorderState.options));
+      } catch { /* 存不下不影响录制 */ }
+    }
+
+    function recLoadPanel() {
+      try {
+        const raw = JSON.parse(window.localStorage.getItem(REC_PANEL_KEY) || 'null');
+        if (!raw || typeof raw !== 'object') return;
+        recorderState.panel.leftW = clamp(Number(raw.leftW) || 63, 38, 78);
+        recorderState.panel.previewH = clamp(Number(raw.previewH) || 58, 30, 78);
+      } catch { /* 用默认布局 */ }
+    }
+
+    function recSavePanel() {
+      try {
+        window.localStorage.setItem(REC_PANEL_KEY, JSON.stringify(recorderState.panel));
+      } catch { /* ignore */ }
+    }
+
+    recLoadOptions();
+    recLoadPanel();
+
+    function recPad(value) {
+      return value < 10 ? '0' + value : String(value);
+    }
+
+    function recClock(ms) {
+      const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      return (hours ? hours + ':' : '') + recPad(minutes) + ':' + recPad(seconds);
+    }
+
+    function recBytes(bytes) {
+      const value = Number(bytes) || 0;
+      if (value <= 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let scaled = value;
+      let index = 0;
+      while (scaled >= 1024 && index < units.length - 1) {
+        scaled /= 1024;
+        index += 1;
+      }
+      return (index === 0 || scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1)) + ' ' + units[index];
+    }
+
+    function recStamp(at) {
+      const date = new Date(at || Date.now());
+      return date.getFullYear() + '-' + recPad(date.getMonth() + 1) + '-' + recPad(date.getDate())
+        + ' ' + recPad(date.getHours()) + ':' + recPad(date.getMinutes());
+    }
+
+    function recElapsedMs() {
+      if (recorderState.phase !== 'live') return 0;
+      return Math.max(0, Date.now() - recorderState.startedAt);
+    }
+
+    /** 404 是「Host 半还没生效」的专用信号，面板据此提示重启，而不是报一次普通失败。 */
+    async function recCall(op, body) {
+      const headers = { 'x-workbench-client': 'recorder' };
+      const init = { method: 'GET', headers, cache: 'no-store' };
+      if (body) {
+        init.method = 'POST';
+        init.headers = Object.assign({ 'content-type': 'application/json' }, headers);
+        init.body = JSON.stringify(body);
+      }
+      const response = await fetch(REC_ROUTE + '?op=' + encodeURIComponent(op), init);
+      if (response.status === 404) {
+        // 两种 404：整条路由不存在（旧 Host 连这个功能都没有，回的是 SPA 的 HTML），
+        // 和路由在、但这个 op 不存在（Host 是上一版）。两种都要求重启一次，但提示一样。
+        const type = response.headers && typeof response.headers.get === 'function'
+          ? String(response.headers.get('content-type') || '') : '';
+        const missing = new Error('recorder route missing');
+        if (type.indexOf('text/html') < 0) missing.dshOpMissing = true;
+        else missing.dshRouteMissing = true;
+        throw missing;
+      }
+      const data = await response.json().catch(() => null);
+      if (!data || typeof data !== 'object') throw new Error('bad recorder response');
+      return data;
+    }
+
+    function recApplyStatus(data) {
+      if (!data) return;
+      // 旧 Host 的 status 没有 features：那说明它还是上一版进程，预览/框选/改目录都不存在。
+      recorderState.stale = !Array.isArray(data.features);
+      if (data.recording) {
+        recorderState.phase = 'live';
+        recorderState.startedAt = Number(data.startedAt) || Date.now();
+        recorderState.activeFile = typeof data.file === 'string' ? data.file : '';
+        recorderState.size = Number(data.size) || 0;
+      }
+      if (typeof data.dir === 'string' && data.dir) {
+        recorderState.dir = data.dir;
+        recorderState.options.dir = data.dir;
+      }
+      if (typeof data.ffmpeg === 'string') recorderState.ffmpeg = data.ffmpeg;
+      if (data.disk && typeof data.disk === 'object') recorderState.disk = data.disk;
+    }
+
+    function recApplyList(data) {
+      if (!data) return;
+      if (Array.isArray(data.items)) recorderState.library = data.items;
+      if (typeof data.dir === 'string' && data.dir) {
+        recorderState.dir = data.dir;
+        if (!recorderState.options.dir) recorderState.options.dir = data.dir;
+      }
+      if (typeof data.ffmpeg === 'string') recorderState.ffmpeg = data.ffmpeg;
+      if (data.disk && typeof data.disk === 'object') recorderState.disk = data.disk;
+    }
+
+    async function recRefresh() {
+      try {
+        const list = await recCall('list');
+        recApplyList(list);
+        recorderState.needsRestart = false;
+        if (recorderState.error === recT().recHostFailed) recorderState.error = '';
+      } catch (error) {
+        if (error && (error.dshRouteMissing || error.dshOpMissing)) recorderState.needsRestart = true;
+        else recorderState.error = recT().recHostFailed;
+      }
+      recNotify();
+    }
+
+    async function recBootstrap() {
+      // 预览不在这里开：按用户的要求，**没开始录制时那一栏保持空白**。预览只跟着
+      // 录制状态走（见 RecordView 里那个 effect），这样打开面板也不会白占一个抓屏进程。
+      recLoadDevices();
+      try {
+        const status = await recCall('status');
+        recorderState.needsRestart = false;
+        recApplyStatus(status);
+      } catch (error) {
+        if (error && (error.dshRouteMissing || error.dshOpMissing)) recorderState.needsRestart = true;
+        else recorderState.error = recT().recHostFailed;
+      }
+      recNotify();
+      recRefresh();
+    }
+
+    async function recPreviewHost(on) {
+      try {
+        const data = await recCall('preview', { on });
+        if (on && data && data.ok === false) {
+          recorderState.notice = data.error ? String(data.error) : recT().recPreviewFailed;
+          recNotify();
+        }
+      } catch { /* 预览失败不影响录制 */ }
+    }
+
+    async function recLoadDevices() {
+      if (recorderState.devicesLoaded) return;
+      try {
+        const data = await recCall('devices');
+        recorderState.devices = Array.isArray(data.items) ? data.items : [];
+      } catch {
+        recorderState.devices = [];
+      }
+      recorderState.devicesLoaded = true;
+      recNotify();
+    }
+
+    /**
+     * H.264 的 yuv420p 只接受偶数宽高：框选随手拖出来的 1091×881 会让编码器直接拒绝，
+     * 表现就是「点开始马上就结束」。在发出去之前就取偶数，Host 那边也有一道同样的兜底。
+     */
+    function recSnapRegion(region) {
+      if (!region) return null;
+      const w = Math.max(16, Math.round(Number(region.w) || 0) & ~1);
+      const h = Math.max(16, Math.round(Number(region.h) || 0) & ~1);
+      if (!w || !h) return null;
+      return { x: Math.round(Number(region.x) || 0), y: Math.round(Number(region.y) || 0), w, h };
+    }
+
+    async function recStart() {
+      const state = recorderState;
+      if (state.phase === 'starting' || state.phase === 'live' || state.phase === 'stopping') return;
+      const t = recT();
+      state.phase = 'starting';
+      state.error = '';
+      state.notice = '';
+      state.samples = [];
+      // 框选出来的尺寸先收敛成偶数，界面与真正录的尺寸保持一致。
+      const region = recSnapRegion(state.options.region);
+      if (region) { state.options.region = region; recSaveOptions(); }
+      recNotify();
+      try {
+        const quality = REC_QUALITIES[state.options.quality] || REC_QUALITIES.balanced;
+        const data = await recCall('start', {
+          fps: state.options.fps,
+          crf: quality.crf,
+          mic: state.options.mic || '',
+          region: region,
+        });
+        if (!data || data.ok !== true) {
+          state.phase = 'idle';
+          if (data && data.needsFfmpeg) state.error = t.recNoFfmpeg;
+          else state.error = data && data.error ? String(data.error) : t.recFailed;
+          recNotify();
+          return;
+        }
+        state.phase = 'live';
+        state.startedAt = Number(data.startedAt) || Date.now();
+        state.activeFile = typeof data.file === 'string' ? data.file : '';
+        state.size = 0;
+        state.result = null;
+        recNotify();
+      } catch (error) {
+        state.phase = 'idle';
+        if (error && error.dshRouteMissing) {
+          state.needsRestart = true;
+          state.error = '';
+        } else {
+          state.error = t.recHostFailed;
+        }
+        recNotify();
+      }
+    }
+
+    async function recStop() {
+      const state = recorderState;
+      if (state.phase !== 'live') return;
+      const t = recT();
+      state.phase = 'stopping';
+      recNotify();
+      try {
+        const data = await recCall('stop');
+        if (data && data.ok === true) {
+          state.result = {
+            file: String(data.file || ''),
+            name: String(data.name || ''),
+            size: Number(data.size) || 0,
+            ms: Number(data.ms) || 0,
+          };
+          state.phase = 'ready';
+          state.activeFile = '';
+          state.error = '';
+        } else {
+          state.phase = 'idle';
+          state.activeFile = '';
+          state.error = data && data.error ? String(data.error) : t.recEmpty;
+        }
+      } catch {
+        state.phase = 'idle';
+        state.activeFile = '';
+        state.error = t.recHostFailed;
+      }
+      recNotify();
+      recRefresh();
+    }
+
+    async function recPlay(file) {
+      if (!file) return;
+      try { await recCall('open', { file }) } catch { /* ignore */ }
+    }
+
+    async function recReveal(file) {
+      try { await recCall('reveal', { file: file || '' }) } catch { /* ignore */ }
+    }
+
+    async function recDelete(file) {
+      if (!file) return;
+      const t = recT();
+      try {
+        const data = await recCall('delete', { file });
+        if (data && data.ok) {
+          recApplyList(data);
+          if (recorderState.result && recorderState.result.file === file) {
+            recorderState.result = null;
+            if (recorderState.phase === 'ready') recorderState.phase = 'idle';
+          }
+        } else {
+          recorderState.error = data && data.error ? String(data.error) : t.recDeleteFailed;
+        }
+      } catch {
+        recorderState.error = t.recHostFailed;
+      }
+      recNotify();
+    }
+
+    function recSetOption(key, value) {
+      recorderState.options = Object.assign({}, recorderState.options, { [key]: value });
+      recSaveOptions();
+      recNotify();
+    }
+
+    async function recTogglePreview(on) {
+      recSetOption('preview', on);
+      // 只有正在录的时候才去开关 Host 的预览进程；空闲时它只是下次录制的一个偏好。
+      if (recorderState.phase === 'live' || recorderState.phase === 'starting') await recPreviewHost(on);
+    }
+
+    /** 保存目录：手填，或让 Host 弹系统原生的目录选择框。 */
+    async function recChooseDir() {
+      const t = recT();
+      recorderState.busy = 'folder';
+      recorderState.error = '';
+      recNotify();
+      try {
+        const data = await recCall('pick-folder', {});
+        if (data && data.ok && data.dir) {
+          await recApplyDir(data.dir);
+        } else if (data && data.error && data.error !== 'cancelled') {
+          recorderState.notice = data.error;
+        }
+      } catch (error) {
+        if (error && (error.dshRouteMissing || error.dshOpMissing)) recorderState.needsRestart = true;
+        else recorderState.error = t.recHostFailed;
+      }
+      recorderState.busy = '';
+      recNotify();
+    }
+
+    async function recApplyDir(dir) {
+      const t = recT();
+      const wanted = String(dir || '').trim();
+      if (!wanted) return;
+      try {
+        const data = await recCall('config', { dir: wanted });
+        if (data && data.ok && typeof data.dir === 'string') {
+          recorderState.dir = data.dir;
+          recorderState.options.dir = data.dir;
+          recSaveOptions();
+          recorderState.notice = t.recDirChanged;
+          recNotify();
+          recRefresh();
+        } else {
+          recorderState.error = data && data.error ? String(data.error) : t.recDirFailed;
+          recNotify();
+        }
+      } catch {
+        recorderState.error = t.recHostFailed;
+        recNotify();
+      }
+    }
+
+    /** 框选区域：Host 起一个全屏 PowerShell 覆盖层拖矩形（最多等两分钟）。 */
+    async function recPickRegion() {
+      const t = recT();
+      recorderState.busy = 'region';
+      recorderState.error = '';
+      recNotify();
+      try {
+        const data = await recCall('pick-region', {});
+        if (data && data.ok) {
+          recorderState.options.region = data.region || null;
+          recSaveOptions();
+          recorderState.notice = data.region ? t.recRegionPicked : t.recRegionFull;
+        } else {
+          recorderState.notice = t.recRegionCancelled;
+        }
+      } catch (error) {
+        if (error && (error.dshRouteMissing || error.dshOpMissing)) recorderState.needsRestart = true;
+        else recorderState.error = t.recHostFailed;
+      }
+      recorderState.busy = '';
+      recNotify();
+    }
+
+    function recClearRegion() {
+      recorderState.options.region = null;
+      recSaveOptions();
+      recNotify();
+    }
+
+    function useRecorderState() {
+      const [, bump] = useState(0);
+      useEffect(() => {
+        const off = recSubscribe(() => bump((value) => value + 1));
+        const host = typeof window !== 'undefined' ? window : null;
+        const timer = host && typeof host.setInterval === 'function'
+          ? host.setInterval(() => {
+            const phase = recorderState.phase;
+            if (phase === 'live' || phase === 'starting' || phase === 'stopping') bump((value) => value + 1);
+          }, 500)
+          : null;
+        return () => {
+          off();
+          if (timer !== null && host && typeof host.clearInterval === 'function') host.clearInterval(timer);
+        };
+      }, []);
+      return recorderState;
+    }
+
+    /** 空白舞台上的那枚相机。 */
+    function RecGlyph() {
+      return h('svg', {
+        className: 'wsb-recGlyph', viewBox: '0 0 24 24', 'aria-hidden': 'true',
+        fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+      },
+        h('rect', { x: 2.6, y: 5.4, width: 18.8, height: 13.2, rx: 3.4 }),
+        h('circle', { cx: 12, cy: 12, r: 3.2 }));
+    }
+
+    /** 一条可拖动的分割条；方向 'v' 改列宽，'h' 改行高（百分比）。 */
+    function RecSplitter({ direction, value, onChange }) {
+      const dragRef = useRef(null);
+      const onDown = (event) => {
+        const host = event.currentTarget && event.currentTarget.parentElement;
+        if (!host) return;
+        const rect = host.getBoundingClientRect();
+        dragRef.current = { rect };
+        event.preventDefault();
+        const onMove = (move) => {
+          const current = dragRef.current;
+          if (!current) return;
+          if (direction === 'v') {
+            const next = ((move.clientX - current.rect.left) / Math.max(1, current.rect.width)) * 100;
+            onChange(clamp(next, 38, 78));
+          } else {
+            const next = ((move.clientY - current.rect.top) / Math.max(1, current.rect.height)) * 100;
+            onChange(clamp(next, 30, 78));
+          }
+        };
+        const onUp = () => {
+          dragRef.current = null;
+          safe(() => window.removeEventListener('pointermove', onMove));
+          safe(() => window.removeEventListener('pointerup', onUp));
+        };
+        safe(() => window.addEventListener('pointermove', onMove));
+        safe(() => window.addEventListener('pointerup', onUp));
+      };
+      return h('div', {
+        className: direction === 'v' ? 'wsb-recSplitV' : 'wsb-recSplitH',
+        'data-rec-split': direction,
+        'data-value': String(Math.round(value)),
+        onPointerDown: onDown,
+        role: 'separator',
+        'aria-orientation': direction === 'v' ? 'vertical' : 'horizontal',
+      }, h('i', null));
+    }
+
+    /** 保存盘的占用环：conic-gradient 画已用部分，中间写百分比。 */
+    function RecDiskRing({ disk, t }) {
+      if (!disk || !disk.total) {
+        return h('div', { className: 'wsb-recEmpty' }, t.recDiskUnknown);
+      }
+      const usedRatio = clamp(disk.used / disk.total, 0, 1);
+      const degrees = Math.round(usedRatio * 360);
+      return h('div', { className: 'wsb-recRing' },
+        h('div', {
+          className: 'wsb-recRingFace',
+          style: { background: 'conic-gradient(#ff9f0a 0deg ' + degrees + 'deg, color-mix(in srgb,#fff 12%,transparent) ' + degrees + 'deg 360deg)' },
+        }, h('span', null, Math.round(usedRatio * 100) + '%')),
+        h('div', { className: 'wsb-recRingLegend' },
+          h('span', null, t.recDiskUsed + ' ' + recBytes(disk.used)),
+          h('span', null, t.recDiskFree + ' ' + recBytes(disk.free))));
+    }
+
+    /** 文件大小走势：把录制中采到的体积画成一条折线。 */
+    function RecSpark({ samples }) {
+      const width = 180;
+      const height = 44;
+      if (!samples.length) return h('svg', { className: 'wsb-recSpark', viewBox: '0 0 ' + width + ' ' + height });
+      const max = Math.max.apply(null, samples.map((sample) => sample.size).concat([1]));
+      const step = samples.length > 1 ? width / (samples.length - 1) : width;
+      const points = samples.map((sample, index) => {
+        const x = index * step;
+        const y = height - (sample.size / max) * (height - 6) - 3;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+      return h('svg', { className: 'wsb-recSpark', viewBox: '0 0 ' + width + ' ' + height, preserveAspectRatio: 'none' },
+        h('polyline', { points, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'vector-effect': 'non-scaling-stroke' }));
+    }
+
+    function RecordView({ t, appearance, onBack, anim, screenStyle, onAnimEnd }) {
+      const state = useRecorderState();
+      const live = state.phase === 'live' || state.phase === 'starting';
+      const busy = state.phase === 'starting' || state.phase === 'stopping';
+      const [frame, setFrame] = useState('');
+      const [dirDraft, setDirDraft] = useState('');
+
+      useEffect(() => {
+        recBootstrap();
+        return () => { recPreviewHost(false) };
+      }, []);
+
+      // 录制中每秒问一次 Host：这一段现在多大、盘还剩多少。样本进走势图。
+      useEffect(() => {
+        if (state.phase !== 'live') return undefined;
+        const host = typeof window !== 'undefined' ? window : null;
+        if (!host || typeof host.setInterval !== 'function') return undefined;
+        const timer = host.setInterval(() => {
+          recCall('status').then((data) => {
+            if (!data) return;
+            // Host 说没在录了，而面板还以为在录：ffmpeg 中途退出了（区域越界、设备被占用、
+            // 编码器拒绝参数）。把状态收回来，别让计时凭空一直走。
+            if (recorderState.phase === 'live' && data.recording === false) {
+              recorderState.phase = 'idle';
+              recorderState.activeFile = '';
+              recorderState.size = 0;
+              recorderState.error = recT().recStoppedEarly;
+              recNotify();
+              recRefresh();
+              return;
+            }
+            if (typeof data.size === 'number') {
+              recorderState.size = data.size;
+              recorderState.samples = recorderState.samples.concat([{ at: Date.now(), size: data.size }]).slice(-40);
+            }
+            if (data.disk) recorderState.disk = data.disk;
+            recNotify();
+          }).catch(() => {});
+        }, 1000);
+        return () => { if (typeof host.clearInterval === 'function') host.clearInterval(timer) };
+      }, [state.phase]);
+
+      // 预览：只在**录制中**才取帧。没开始录时这一栏是空的，也不占 Host 的抓屏进程。
+      useEffect(() => {
+        const live = state.phase === 'live' || state.phase === 'starting';
+        if (!live) {
+          setFrame('');
+          recPreviewHost(false);
+          return undefined;
+        }
+        if (!state.options.preview) { setFrame(''); return undefined; }
+        recPreviewHost(true);
+        let alive = true;
+        let timer = null;
+        let held = '';
+        const host = typeof window !== 'undefined' ? window : null;
+        // 计时走 window 上的定时器：浏览器里是普通定时器，离线自检里是虚拟时钟，
+        // 一个不会自己跑起来的轮询，不会把 node 进程挂住。
+        const later = (fn, ms) => ((host && typeof host.setTimeout === 'function') ? host.setTimeout(fn, ms) : setTimeout(fn, ms));
+        const cancel = (id) => {
+          if (!id) return;
+          if (host && typeof host.clearTimeout === 'function') host.clearTimeout(id);
+          else clearTimeout(id);
+        };
+        const tick = () => {
+          if (!alive) return;
+          fetch(REC_ROUTE + '?op=frame&t=' + Date.now(), {
+            headers: { 'x-workbench-client': 'recorder' }, cache: 'no-store',
+          }).then((response) => (response.status === 200 ? response.blob() : null))
+            .then((blob) => {
+              if (!alive || !blob) return;
+              const next = safe(() => URL.createObjectURL(blob), '');
+              if (!next) return;
+              if (held) safe(() => URL.revokeObjectURL(held));
+              held = next;
+              setFrame(next);
+            })
+            .catch(() => {})
+            .then(() => { if (alive) timer = later(tick, 280); });
+        };
+        tick();
+        return () => {
+          alive = false;
+          cancel(timer);
+          if (held) safe(() => URL.revokeObjectURL(held));
+        };
+      }, [state.phase, state.options.preview]);
+
+      const qualityButton = (id) => h('button', {
+        key: 'quality-' + id, type: 'button', className: 'wsb-segBtn', 'data-rec-quality': id,
+        'data-on': state.options.quality === id ? 'true' : 'false',
+        disabled: busy || state.phase === 'live',
+        onClick: () => recSetOption('quality', id),
+      }, t['recQ' + id.charAt(0).toUpperCase() + id.slice(1)]);
+
+      const fpsButton = (value) => h('button', {
+        key: 'fps-' + value, type: 'button', className: 'wsb-segBtn', 'data-rec-fps': String(value),
+        'data-on': state.options.fps === value ? 'true' : 'false',
+        disabled: busy || state.phase === 'live',
+        onClick: () => recSetOption('fps', value),
+      }, value + ' fps');
+
+      const audioOn = Boolean(state.options.mic);
+      const statusText = state.phase === 'starting' ? t.recStarting
+        : state.phase === 'live' ? t.recLive
+          : state.phase === 'stopping' ? t.recStopping
+            : state.phase === 'ready' ? t.recReady : t.recIdle;
+
+      // 展示的尺寸与实际录制一致：都是取偶后的值。
+      const region = recSnapRegion(state.options.region);
+
+      const renderPreview = () => h('div', { className: 'wsb-recPanel wsb-recPanelPreview', 'data-rec-panel': 'preview' },
+        h('div', { className: 'wsb-recPanelHead' },
+          h('b', null, t.recPreview),
+          h('div', { className: 'wsb-recPanelSpacer' }),
+          h('label', { className: 'wsb-recSwitch', title: t.recPreviewHint },
+            h('input', {
+              type: 'checkbox', checked: state.options.preview === true,
+              'data-rec-preview-toggle': '1',
+              onChange: (event) => recTogglePreview(Boolean(event.target && event.target.checked)),
+            }),
+            h('span', null, state.options.preview ? t.recPreviewOn : t.recPreviewOff))),
+        h('div', { className: 'wsb-recStage', 'data-rec-stage': state.phase },
+          !live
+            // 没开始录之前不显示当前屏幕 —— 预览要的只是「录的是什么」，不是一面镜子。
+            ? h('div', { className: 'wsb-recFrameEmpty', 'data-rec-idle-stage': '1' },
+              h(RecGlyph, null),
+              h('span', null, t.recPreviewIdleHint))
+            : (state.options.preview && frame
+              ? h('img', { className: 'wsb-recFrame', src: frame, alt: '', 'data-rec-frame': '1' })
+              : h('div', { className: 'wsb-recFrameEmpty' },
+                h(RecGlyph, null),
+                h('span', null, state.options.preview ? t.recPreviewLoading : t.recPreviewOffHint))),
+          live
+            ? h('div', { className: 'wsb-recBadge', 'data-rec-livebox': '1' },
+              h('span', { className: 'wsb-recDot', 'data-on': 'true' }),
+              h('b', null, t.recLive),
+              h('span', { className: 'wsb-recTicker', 'data-rec-clock': '1' }, recClock(recElapsedMs())))
+            : null),
+        h('div', { className: 'wsb-recBar' },
+          state.phase === 'idle' || state.phase === 'ready' ? h('button', {
+            type: 'button', className: 'wsb-recGo', 'data-rec-start': '1',
+            onClick: () => { recStart(); },
+          }, h('span', { className: 'wsb-recDot' }), state.phase === 'ready' ? t.recAgain : t.recStart) : null,
+          state.phase === 'starting' ? h('span', { className: 'wsb-recWait' }, t.recStarting) : null,
+          state.phase === 'stopping' ? h('span', { className: 'wsb-recWait' }, t.recStopping) : null,
+          state.phase === 'live' ? h('button', {
+            type: 'button', className: 'wsb-recStop', 'data-rec-stop': '1',
+            onClick: () => recStop(),
+          }, t.recStop) : null,
+          live ? h('span', { className: 'wsb-recTime', 'data-rec-time': '1' }, recClock(recElapsedMs())) : null,
+          state.result && state.phase === 'ready' ? h('button', {
+            type: 'button', className: 'wsb-btn wsb-recPrimary', 'data-rec-play': '1',
+            onClick: () => recPlay(state.result.file),
+          }, t.recPlay) : null,
+          state.result && state.phase === 'ready' ? h('button', {
+            type: 'button', className: 'wsb-btn', 'data-rec-show': '1',
+            onClick: () => recReveal(state.result.file),
+          }, t.recShowInFolder) : null,
+          state.result && state.phase === 'ready' ? h('button', {
+            type: 'button', className: 'wsb-btn', 'data-rec-delete': '1',
+            onClick: () => recDelete(state.result.file),
+          }, t.recDelete) : null),
+        state.result && state.phase === 'ready'
+          ? h('div', { className: 'wsb-recResultLine', 'data-rec-result-name': '1' },
+            h('b', null, state.result.name),
+            h('span', { className: 'wsb-recPath' }, state.result.file))
+          : null);
+
+      const renderStats = () => {
+        const elapsed = live ? recElapsedMs() : (state.result ? state.result.ms : 0);
+        const size = live ? state.size : (state.result ? state.result.size : 0);
+        return h('div', { className: 'wsb-recPanel wsb-recPanelStats', 'data-rec-panel': 'stats' },
+          h('div', { className: 'wsb-recPanelHead' }, h('b', null, t.recStats),
+            h('div', { className: 'wsb-recPanelSpacer' }),
+            h('span', { className: 'wsb-recMeta' }, region ? t.recRegionCustom : t.recRegionFullLabel)),
+          h('div', { className: 'wsb-recStats' },
+            h('div', { className: 'wsb-recStat' },
+              h('span', { className: 'wsb-recStatLabel' }, t.recDuration),
+              h('b', { className: 'wsb-recStatValue', 'data-rec-duration': '1' }, recClock(elapsed)),
+              h('div', { className: 'wsb-recStatBar' },
+                h('i', { style: { width: clamp((elapsed / (10 * 60)) * 100, 0, 100) + '%' } }))),
+            h('div', { className: 'wsb-recStat' },
+              h('span', { className: 'wsb-recStatLabel' }, t.recDisk),
+              h('b', { className: 'wsb-recStatValue', 'data-rec-disk': '1' }, state.disk && state.disk.free ? recBytes(state.disk.free) : '—'),
+              h(RecDiskRing, { disk: state.disk, t })),
+            h('div', { className: 'wsb-recStat' },
+              h('span', { className: 'wsb-recStatLabel' }, t.recFileSize),
+              h('b', { className: 'wsb-recStatValue', 'data-rec-size': '1' }, recBytes(size)),
+              h(RecSpark, { samples: state.samples }))));
+      };
+
+      const renderSettings = () => h('div', { className: 'wsb-recPanel wsb-recPanelSettings', 'data-rec-panel': 'settings' },
+        h('div', { className: 'wsb-recPanelHead' }, h('b', null, t.recOptions),
+          h('div', { className: 'wsb-recPanelSpacer' }),
+          h('span', { className: 'wsb-recState', 'data-rec-state': state.phase },
+            h('span', { className: 'wsb-recDot', 'data-on': state.phase === 'live' ? 'true' : 'false' }),
+            statusText)),
+        h('div', { className: 'wsb-recScroll' },
+          h('div', { className: 'wsb-recRow' },
+            h('span', { className: 'wsb-recLabel' }, t.recFps),
+            h('div', { className: 'wsb-seg' }, [30, 60].map(fpsButton))),
+          h('div', { className: 'wsb-recRow' },
+            h('span', { className: 'wsb-recLabel' }, t.recQuality),
+            h('div', { className: 'wsb-seg' }, Object.keys(REC_QUALITIES).map(qualityButton))),
+          h('div', { className: 'wsb-recRow' },
+            h('label', { className: 'wsb-recSwitch' },
+              h('input', {
+                type: 'checkbox', checked: audioOn, 'data-rec-audio': '1',
+                disabled: busy || state.phase === 'live',
+                onChange: (event) => {
+                  const on = Boolean(event.target && event.target.checked);
+                  recSetOption('mic', on ? (state.devices[0] || '') : '');
+                },
+              }),
+              h('span', null, t.recAudio)),
+            h('select', {
+              className: 'wsb-recSelect', 'data-rec-mic': '1',
+              value: state.options.mic || '',
+              disabled: busy || state.phase === 'live' || !audioOn,
+              onChange: (event) => recSetOption('mic', event && event.target ? String(event.target.value) : ''),
+            },
+              h('option', { value: '' }, t.recMicOff),
+              state.devices.map((name) => h('option', { key: name, value: name }, name)))),
+          !audioOn ? h('div', { className: 'wsb-recHint' }, t.recSysAudioNote) : null,
+          h('div', { className: 'wsb-recDivider' }),
+          h('div', { className: 'wsb-recRow' },
+            h('span', { className: 'wsb-recLabel' }, t.recSaveDir),
+            h('div', { className: 'wsb-recRowBtns' },
+              h('button', {
+                type: 'button', className: 'wsb-btn', 'data-rec-folder': '1',
+                onClick: () => recReveal(''),
+              }, t.recOpenFolder))),
+          h('div', { className: 'wsb-recDirRow' },
+            h('input', {
+              className: 'wsb-recInput', 'data-rec-dir': '1', value: dirDraft || state.dir,
+              placeholder: state.dir || 'D:\\recordings',
+              onChange: (event) => setDirDraft(event && event.target ? String(event.target.value) : ''),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') { recApplyDir(event.currentTarget.value); setDirDraft(''); }
+              },
+              onBlur: (event) => {
+                const value = event && event.target ? String(event.target.value) : '';
+                if (value && value !== state.dir) recApplyDir(value);
+                setDirDraft('');
+              },
+            }),
+            h('button', {
+              type: 'button', className: 'wsb-btn', 'data-rec-pick': '1',
+              disabled: state.busy === 'folder',
+              onClick: () => recChooseDir(),
+            }, state.busy === 'folder' ? t.recChoosing : t.recChoose)),
+          h('div', { className: 'wsb-recHint' }, t.recSaveNote),
+          h('div', { className: 'wsb-recDivider' }),
+          h('div', { className: 'wsb-recRow' },
+            h('span', { className: 'wsb-recLabel' }, t.recRegion),
+            h('div', { className: 'wsb-recRowBtns' },
+              h('button', {
+                type: 'button', className: 'wsb-btn', 'data-rec-region': '1',
+                disabled: busy || state.phase === 'live' || state.busy === 'region',
+                onClick: () => recPickRegion(),
+              }, state.busy === 'region' ? t.recRegionPicking : t.recRegionPick),
+              h('button', {
+                type: 'button', className: 'wsb-btn', 'data-rec-region-clear': '1',
+                disabled: !region || busy || state.phase === 'live',
+                onClick: () => recClearRegion(),
+              }, t.recRegionReset))),
+          h('div', { className: 'wsb-recPath', 'data-rec-region-value': '1' },
+            region ? region.w + '×' + region.h + ' @ ' + region.x + ',' + region.y : t.recRegionFullLabel),
+          h('div', { className: 'wsb-recHint' }, t.recRegionHint),
+          h('div', { className: 'wsb-recDivider' }),
+          h('div', { className: 'wsb-recRow' },
+            h('b', { className: 'wsb-recCardTitle' }, t.recLibrary),
+            h('span', { className: 'wsb-recMeta' }, state.library.length + ' ' + t.recItems)),
+          state.library.length
+            ? h('div', { className: 'wsb-recList' }, state.library
+              .filter((item) => item.file !== state.activeFile)
+              .map((item) => h('div', {
+                key: item.file, className: 'wsb-recItem', 'data-rec-item': item.file,
+                'data-on': state.result && state.result.file === item.file ? 'true' : 'false',
+              },
+                h('button', {
+                  type: 'button', className: 'wsb-recItemMain', title: t.recPlay,
+                  onClick: () => recPlay(item.file),
+                },
+                  h('b', null, recStamp(item.at)),
+                  h('span', null, recBytes(item.size))),
+                h('button', {
+                  type: 'button', className: 'wsb-recMini', title: t.recShowInFolder, 'data-rec-show-item': item.file,
+                  onClick: () => recReveal(item.file),
+                }, '↗'),
+                h('button', {
+                  type: 'button', className: 'wsb-recMini', title: t.recDelete, 'data-tone': 'danger',
+                  'data-rec-item-delete': item.file,
+                  onClick: () => recDelete(item.file),
+                }, '✕'))))
+            : h('div', { className: 'wsb-recEmpty' }, t.recNoLibrary)),
+        state.needsRestart || state.stale
+          ? h('div', { className: 'wsb-recError', 'data-rec-restart': '1' },
+            h('b', null, t.recNeedRestart + ' '), t.recRestartHint)
+          : null,
+        !(state.needsRestart || state.stale) && !state.ffmpeg
+          ? h('div', { className: 'wsb-recError', 'data-rec-nofmpeg': '1' },
+            h('b', null, t.recNoFfmpeg + ' '), t.recFfmpegHint)
+          : null,
+        state.error ? h('div', { className: 'wsb-recError', 'data-rec-error': '1' }, state.error) : null,
+        state.notice ? h('div', { className: 'wsb-rec-notice', 'data-rec-notice': '1' }, state.notice) : null);
+
+      return h('div', {
+        className: 'wsb-screen', 'data-role': 'record', 'data-anim': anim, style: screenStyle,
+        onAnimationEnd: (event) => { if (event.target === event.currentTarget) onAnimEnd() },
+      },
+        h('div', { className: 'wsb-root' },
+          appearance && appearance.consoleAurora === false
+            ? null
+            : h('div', { className: 'wsb-consoleAurora', 'aria-hidden': 'true' }, h(AuroraBlobs, null)),
+          h('div', { className: 'wsb-rec', 'data-rec-phase': state.phase },
+            h('div', { className: 'wsb-head wsb-recHead' },
+              h('button', {
+                type: 'button', className: 'wsb-backBtn', 'data-rec-back': '1',
+                title: t.panel, 'aria-label': t.panel, onClick: onBack,
+              }, h('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, h('path', { d: 'M14.5 6 8.5 12l6 6' }))),
+              h('div', { className: 'wsb-title' },
+                h('b', null, t.recTitle),
+                h('span', { className: 'wsb-recSub' }, t.recSubHint)),
+              h('div', { className: 'wsb-recSpacer' }),
+              h('span', { className: 'wsb-recMeta', 'data-rec-dir-head': '1' }, state.dir || '')),
+            h('div', {
+              className: 'wsb-recPanels',
+              style: { '--rec-left-w': state.panel.leftW + '%', '--rec-preview-h': state.panel.previewH + '%' },
+            },
+              h('div', { className: 'wsb-recCol' },
+                renderPreview(),
+                h(RecSplitter, {
+                  direction: 'h', value: state.panel.previewH,
+                  onChange: (value) => { recorderState.panel.previewH = value; recSavePanel(); recNotify(); },
+                }),
+                renderStats()),
+              h(RecSplitter, {
+                direction: 'v', value: state.panel.leftW,
+                onChange: (value) => { recorderState.panel.leftW = value; recSavePanel(); recNotify(); },
+              }),
+              renderSettings()))));
+    }
+
+    //#endregion
+
     //#region app shell: state, navigation, transitions
 
     function WorkbenchApp({ services, moduleIndex }) {
@@ -13480,7 +14630,8 @@ window.__ModuleLoader__.load({
           // as a conversation console. The rest are consoles.
           name: kind === 'notebook' ? 'notes'
             : kind === 'news' ? 'news'
-              : kind === 'stock' ? 'stock' : 'console',
+              : kind === 'stock' ? 'stock'
+                : kind === 'record' ? 'record' : 'console',
           moduleId, origin,
           // 从桌面进入模块才走 entering（保留完整的入场动画）。
           // 已经在模块里再切到另一个模块就直接落到 idle —— 桌面保持被覆盖，
@@ -13569,6 +14720,7 @@ window.__ModuleLoader__.load({
           },
           news: { label: () => t.kindNews, make: () => ({ news: defaultNewsSettings() }) },
           stock: { label: () => t.kindStock, make: () => ({ stock: defaultStockSettings() }) },
+          record: { label: () => t.kindRecord, make: () => ({}) },
         };
         const want = KINDS[kind] ? kind : 'game';
         const spec = KINDS[want];
@@ -13742,7 +14894,7 @@ window.__ModuleLoader__.load({
             // The conversation console, the notebook window and the news reader are all
             // full-screen surfaces, so Escape has to be able to leave any of them.
             if (route.name === 'console' || route.name === 'notes' || route.name === 'news'
-              || route.name === 'stock') { event.preventDefault(); back() }
+              || route.name === 'stock' || route.name === 'record') { event.preventDefault(); back() }
             else if (dockPanel) { event.preventDefault(); setDockPanel(null) }
             return;
           }
@@ -13782,7 +14934,7 @@ window.__ModuleLoader__.load({
       // The workbench is fully covered by another screen: the home screen must not stay painted
       // underneath, and the background video has no reason to keep decoding.
       const homeCovered = (route.name === 'console' || route.name === 'notes' || route.name === 'news'
-        || route.name === 'stock')
+        || route.name === 'stock' || route.name === 'record')
         && route.phase === 'idle';
       // For the background video any other screen is reason enough to stop — waiting for the
       // transition to settle would leave it decoding through the whole animation.
@@ -13939,7 +15091,13 @@ window.__ModuleLoader__.load({
                     t, lang, module, patchModule, appearance,
                     onBack: back, anim: consoleAnim, screenStyle, onAnimEnd: onConsoleAnimEnd,
                   })
-                  : h(ConsoleView, {
+                  : module.kind === 'record'
+                    // 录屏 records what the browser can capture — it reads no session either.
+                    ? h(RecordView, {
+                      t, appearance,
+                      onBack: back, anim: consoleAnim, screenStyle, onAnimEnd: onConsoleAnimEnd,
+                    })
+                    : h(ConsoleView, {
                   t, services, module, rows, state, patchModule, notes, onNote, customNodes, onAddCustom,
                   onBack: back, onPickSession: pickSession, onBindSession: bindSession,
                   patchState,
@@ -14008,6 +15166,12 @@ window.__ModuleLoader__.load({
         sessions: ctx.sessions || (typeof ctx.get === 'function' ? ctx.get('sessions') : undefined),
         layout: ctx.layout || (typeof ctx.get === 'function' ? ctx.get('layout') : undefined),
       };
+
+      // 录屏的「选择保存目录」复用宿主的目录选择器；拿不到就只留手填输入框。
+      const workspaceService = typeof ctx.get === 'function' ? ctx.get('uiWorkspace') : undefined;
+      if (workspaceService && typeof workspaceService.pickDirectory === 'function') {
+        recPickDirectory = () => workspaceService.pickDirectory();
+      }
 
       ctx.effect(() => {
         langStore.set(detectLang(ctx));

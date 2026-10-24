@@ -774,13 +774,15 @@ async function main() {
     // The last one is why this test exists at all: each mark looked fine alone, and in a row the
     // set looked like five different icon packs.
     const glyphPath = require(path.join(ROOT, 'test', 'glyph-path.cjs'));
-    const KINDS = ['game', 'notebook', 'news', 'research', 'stock', 'blank'];
+    const KINDS = ['game', 'notebook', 'news', 'research', 'stock', 'record', 'blank'];
     seedState({
       v: 3,
       newsSeeded: true,
       // Both one-time offers are spent, or `normalizeState` would append the modules they ship
       // with and this fixture would stop being exactly the six kinds it names.
       stockSeeded: true,
+      // 录屏 is a third such offer, so this fixture has to spend it too.
+      recordSeeded: true,
       notes: {},
       modules: KINDS.map((kind, index) => ({
         id: 'mod-' + kind, kind, name: 'G' + index, desc: '', preset: 'triple', created: index + 1,
@@ -7115,6 +7117,176 @@ async function main() {
       throw new Error('the Chinese convention is not the default for a Chinese UI');
     }
   });
+
+  //#region 录屏
+  const recSeed = () => seedState({
+    v: 3, newsSeeded: true, stockSeeded: true, recordSeeded: true,
+    focusSessionId: undefined, notes: {},
+    modules: [{ id: 'mod-rec', kind: 'record', name: '录屏', desc: '', accent: '#f472b6', preset: 'triple', created: 1 }],
+  });
+
+  const openRecorder = () => {
+    recSeed();
+    mount(registered.main.component, {});
+    const opened = harness.dispatch(runtime, () => harness.click(runtime,
+      (element) => hasClass(element, 'wsb-card') && element.props['data-add'] !== 'true'));
+    if (!opened) throw new Error('the recorder card was not clickable');
+    return opened;
+  };
+
+  /**
+   * 录屏走 Host 路由（Electron 的页面里没有 getDisplayMedia 选择器），所以测试也按这条
+   * 合约来：一个回答 `/workbench-recorder` 的 fetch 桩，记录每次调用，模拟开始/停止/删除。
+   */
+  const recRoute = { calls: [], recording: false, file: '', startedAt: 0, items: [] };
+
+  const installRecorderRoute = () => {
+    globalThis.fetch = async (url, init) => {
+      const parsed = new URL(String(url), 'http://x');
+      if (parsed.pathname !== '/workbench-recorder') throw new Error('unexpected fetch ' + url);
+      const op = parsed.searchParams.get('op');
+      const body = init && init.body ? JSON.parse(init.body) : {};
+      recRoute.calls.push({ op, body });
+      const json = (value) => ({ status: 200, ok: true, json: async () => value });
+      const dir = 'C:\\Users\\tester\\Videos\\DSH 工作台录屏';
+      const disk = { total: 512000000000, used: 312000000000, free: 200000000000 };
+      if (op === 'status') {
+        return json({
+          ok: true, recording: recRoute.recording, file: recRoute.file,
+          startedAt: recRoute.startedAt, size: 0, dir, disk, ffmpeg: 'C:\\tools\\ffmpeg.exe',
+          features: ['preview', 'region', 'config'],
+        });
+      }
+      if (op === 'list') return json({ ok: true, dir, disk, items: recRoute.items, ffmpeg: 'C:\\tools\\ffmpeg.exe' });
+      if (op === 'devices') return json({ ok: true, items: ['麦克风 (Realtek)'] });
+      if (op === 'config') return json({ ok: true, dir, ffmpeg: 'C:\\tools\\ffmpeg.exe' });
+      if (op === 'preview') return json({ ok: true, running: body.on !== false });
+      // 预览帧是二进制；这里回 204，客户端会保留占位图。
+      if (op === 'frame') return { status: 204, ok: false, json: async () => null, blob: async () => null };
+      if (op === 'pick-region') return json({ ok: true, region: { x: 100, y: 80, w: 1280, h: 720 } });
+      if (op === 'start') {
+        recRoute.recording = true;
+        recRoute.startedAt = Date.now();
+        recRoute.file = dir + '\\screen-20261024-103000.mp4';
+        return json({ ok: true, file: recRoute.file, startedAt: recRoute.startedAt });
+      }
+      if (op === 'stop') {
+        recRoute.recording = false;
+        const item = { file: recRoute.file, name: 'screen-20261024-103000.mp4', size: 4821000, at: Date.now() };
+        recRoute.items = [item].concat(recRoute.items);
+        return json({ ok: true, file: item.file, name: item.name, size: item.size, ms: 6200 });
+      }
+      if (op === 'open' || op === 'reveal') return json({ ok: true });
+      if (op === 'delete') {
+        recRoute.items = recRoute.items.filter((item) => item.file !== body.file);
+        return json({ ok: true, items: recRoute.items, dir });
+      }
+      throw new Error('unknown op ' + op);
+    };
+  };
+
+  const flush = () => harness.flush(runtime);
+
+  await check('the 录屏 module ships on a fresh install', () => {
+    for (const key of ['dsh-workbench.v3', 'dsh-workbench.v2', 'dsh-workbench.v1',
+      'dsh-workbench.v3.recorder.library', 'dsh-workbench.v3.recorder.options']) {
+      windowStub.localStorage.removeItem(key);
+    }
+    const fresh = mount(registered.main.component, {});
+    const stored = JSON.parse(windowStub.localStorage.getItem('dsh-workbench.v3') || '{}');
+    const seeded = (stored.modules || []).filter((item) => item.kind === 'record');
+    if (seeded.length !== 1) throw new Error('expected exactly one shipped recorder, saw ' + seeded.length);
+    if (stored.recordSeeded !== true) throw new Error('the one-time seed flag was not recorded');
+    if (!/录屏/.test(fresh.text)) throw new Error('the fresh desktop does not name the recorder');
+  });
+
+  await check('an install that predates the recorder is offered it exactly once', () => {
+    seedState({
+      v: 3, newsSeeded: true, stockSeeded: true, focusSessionId: undefined, notes: {},
+      modules: [{ id: 'mod-old', kind: 'game', name: '旧控制台', desc: '', accent: '#7db8ff', preset: 'triple', created: 1 }],
+    });
+    mount(registered.main.component, {});
+    const first = JSON.parse(windowStub.localStorage.getItem('dsh-workbench.v3') || '{}');
+    if (!(first.modules || []).some((item) => item.kind === 'record')) {
+      throw new Error('an older install was not offered the recorder');
+    }
+    first.modules = first.modules.filter((item) => item.kind !== 'record');
+    first.recordSeeded = true;
+    seedState(first);
+    mount(registered.main.component, {});
+    const second = JSON.parse(windowStub.localStorage.getItem('dsh-workbench.v3') || '{}');
+    if ((second.modules || []).some((item) => item.kind === 'record')) {
+      throw new Error('a deliberately deleted recorder came back');
+    }
+  });
+
+  await check('the recorder screen is three resizable regions: preview, settings, stats', async () => {
+    installRecorderRoute();
+    const view = openRecorder();
+    await settle();
+    if (!view.elements.some((element) => element.props['data-role'] === 'record')) {
+      throw new Error('the recorder screen did not open');
+    }
+    for (const panel of ['preview', 'settings', 'stats']) {
+      if (!view.elements.some((element) => element.props['data-rec-panel'] === panel)) {
+        throw new Error('missing the ' + panel + ' region');
+      }
+    }
+    const splitters = view.elements.filter((element) => element.props['data-rec-split'] !== undefined);
+    if (splitters.length !== 2) throw new Error('expected two splitters, saw ' + splitters.length);
+    if (!view.elements.some((element) => element.props['data-rec-start'] === '1')) throw new Error('no start button');
+    if (!view.elements.some((element) => element.props['data-rec-preview-toggle'] !== undefined)) {
+      throw new Error('the preview switch is missing');
+    }
+    if (!/录制设置/.test(view.text) || !/录制统计/.test(view.text)) throw new Error('settings or stats region missing');
+    if (!/高清/.test(view.text) || !/均衡/.test(view.text)) throw new Error('the quality choices are missing');
+    if (!/录制声音/.test(view.text)) throw new Error('the audio row is missing');
+    if (!/整个主显示器/.test(view.text)) throw new Error('the capture area row is missing');
+  });
+
+  await check('start → live → stop writes an MP4 take through the Host route', async () => {
+    installRecorderRoute();
+    openRecorder();
+    await settle();
+    harness.click(runtime, (element) => element.props['data-rec-start'] === '1');
+    await settle();
+    let view = flush();
+    if (!view.elements.some((element) => element.props['data-rec-stop'] === '1')) throw new Error('no stop button while recording');
+    if (!view.elements.some((element) => element.props['data-rec-clock'] === '1')) throw new Error('the timer is missing');
+    const started = recRoute.calls.filter((call) => call.op === 'start');
+    if (!started.length) throw new Error('the start route was never called');
+    if (typeof started[started.length - 1].body.crf !== 'number') throw new Error('start did not carry a quality (crf)');
+
+    harness.click(runtime, (element) => element.props['data-rec-stop'] === '1');
+    // stop returns the take, then a list refresh follows; both are promise chains.
+    await settle();
+    await settle();
+    view = flush();
+    if (!view.elements.some((element) => element.props['data-rec-play'] === '1')) throw new Error('no result actions after stop');
+    if (!/\.mp4/.test(view.text)) throw new Error('the result does not name an MP4');
+    if (!view.elements.some((element) => element.props['data-rec-item'] !== undefined)) throw new Error('the take is not in the library');
+  });
+
+  await check('play, reveal and delete act on the Host route', async () => {
+    installRecorderRoute();
+    let view = flush();
+    if (!view.elements.some((element) => element.props['data-rec-play'] === '1')) throw new Error('no play button');
+    harness.click(runtime, (element) => element.props['data-rec-play'] === '1');
+    await settle();
+    if (!recRoute.calls.some((call) => call.op === 'open')) throw new Error('play did not reach the route');
+
+    harness.click(runtime, (element) => element.props['data-rec-show-item'] !== undefined);
+    await settle();
+    if (!recRoute.calls.some((call) => call.op === 'reveal')) throw new Error('reveal did not reach the route');
+
+    harness.click(runtime, (element) => element.props['data-rec-item-delete'] !== undefined);
+    await settle();
+    view = flush();
+    if (view.elements.some((element) => element.props['data-rec-item'] !== undefined)) throw new Error('the library item survived delete');
+    if (!recRoute.calls.some((call) => call.op === 'delete')) throw new Error('delete did not reach the route');
+    if (recRoute.items.length !== 0) throw new Error('the stub still lists the deleted take');
+  });
+  //#endregion
 
   globalThis.fetch = realFetch;
   //#endregion
