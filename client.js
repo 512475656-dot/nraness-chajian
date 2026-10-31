@@ -1180,11 +1180,19 @@ window.__ModuleLoader__.load({
   -webkit-user-select:none;user-select:none}
 .wsb-noteCanvas:active{cursor:grabbing}
 /* 再压一层更黑的底 + 点阵网格：桌面壁纸很亮的时候（比如那片天光），光靠玻璃本身画布还是会比两侧亮。
-   网格画在这一层上，所以它跟着缩放/平移走。 */
+   网格单独一层（.wsb-noteGrid）：底色不跟着缩放变淡，只有纹理那层会有疏密与透明度变化。 */
 .wsb-noteScrim{position:absolute;inset:0;pointer-events:none;
-  background-color:color-mix(in srgb,var(--dsw-alias-bg-base) 46%,transparent);
-  background-image:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent) 1px,transparent 1.5px);
-  background-repeat:repeat}
+  background-color:color-mix(in srgb,var(--dsw-alias-bg-base) 46%,transparent)}
+.wsb-noteGrid{position:absolute;inset:0;pointer-events:none;background-repeat:repeat;
+  background-image:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent) 1px,transparent 1.5px)}
+/* 其他底纹：网格（对齐用）、斜纹（像纸）、无 */
+.wsb-noteGrid[data-bg="grid"]{background-image:
+  linear-gradient(to right,color-mix(in srgb,var(--dsw-alias-label-primary) 9%,transparent) 1px,transparent 1px),
+  linear-gradient(to bottom,color-mix(in srgb,var(--dsw-alias-label-primary) 9%,transparent) 1px,transparent 1px)}
+.wsb-noteGrid[data-bg="diagonal"]{background-image:repeating-linear-gradient(45deg,
+  color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent) 0 1px,
+  transparent 1px var(--wsb-note-gap,24px))}
+.wsb-noteGrid[data-bg="none"]{background-image:none}
 /* 空画布：还没有中心节点时的提示 */
 .wsb-noteEmptyState{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:6px;pointer-events:none;text-align:center;padding:0 24px;
@@ -2591,7 +2599,8 @@ window.__ModuleLoader__.load({
         noteNode: '节点', noteCenterTopic: '中心主题',
         noteAdd: '添加子节点', noteDelete: '删除节点', noteTitle: '标题', noteBody: '备注',
         noteBodyHint: '补充说明（可选）…',
-        noteLayout: '结构', noteBranch: '连线', noteTheme: '配色',
+        noteLayout: '结构', noteBranch: '连线', noteTheme: '配色', noteBg: '底纹',
+        noteBgDots: '点阵', noteBgGrid: '网格', noteBgDiagonal: '斜纹', noteBgNone: '无',
         noteLayMind: '思维导图', noteLayLogic: '逻辑图', noteLayOrg: '组织结构图',
         noteLayTree: '树形图', noteLayTimeline: '时间轴', noteLayFish: '鱼骨图',
         noteBranchCurve: '曲线', noteBranchElbow: '直角', noteBranchLine: '直线',
@@ -2887,7 +2896,8 @@ window.__ModuleLoader__.load({
         noteNode: 'Node', noteCenterTopic: 'Central topic',
         noteAdd: 'Add child node', noteDelete: 'Delete node', noteTitle: 'Title', noteBody: 'Note',
         noteBodyHint: 'Anything worth keeping with the node…',
-        noteLayout: 'Structure', noteBranch: 'Wires', noteTheme: 'Palette',
+        noteLayout: 'Structure', noteBranch: 'Wires', noteTheme: 'Palette', noteBg: 'Texture',
+        noteBgDots: 'Dots', noteBgGrid: 'Grid', noteBgDiagonal: 'Hatch', noteBgNone: 'None',
         noteLayMind: 'Mind map', noteLayLogic: 'Logic chart', noteLayOrg: 'Org chart',
         noteLayTree: 'Tree chart', noteLayTimeline: 'Timeline', noteLayFish: 'Fishbone',
         noteBranchCurve: 'Curved', noteBranchElbow: 'Right angle', noteBranchLine: 'Straight',
@@ -4240,6 +4250,11 @@ window.__ModuleLoader__.load({
     const NOTE_BRANCHES = ['curve', 'elbow', 'line'];
     /** Node shapes the inspector offers ('' = follow the theme's own default). */
     const NOTE_SHAPES = ['round', 'rect', 'under'];
+    /**
+     * 画布底纹。点阵是默认；网格适合对齐，斜纹适合当"纸"，无则只剩那层压暗的底。
+     * 值写进 noteStyle，跟着这篇笔记一起存。
+     */
+    const NOTE_BGS = ['dots', 'grid', 'diagonal', 'none'];
     const NOTE_ZOOM_MIN = 0.3;
     const NOTE_ZOOM_MAX = 2.4;
     /** How many edits 撤销 can walk back. Snapshots are small JSON trees, not whole state. */
@@ -4271,7 +4286,31 @@ window.__ModuleLoader__.load({
 
     /** A fresh note map's choices. The mind map is the structure people expect first. */
     function defaultNoteStyle() {
-      return { layout: 'mind', branch: 'curve', theme: 'classic' };
+      return { layout: 'mind', branch: 'curve', theme: 'classic', bg: 'dots' };
+    }
+
+    /**
+     * 画布底纹的屏幕间距。
+     *
+     * 底纹原来用 `24 × zoom`：缩到 0.3 倍时格子只有 7.2px，1px 的点挤成一片噪点。
+     * 这里给屏幕间距一个下限（14px），不够就把格子按 2 的幂翻倍 —— 缩得越远，格子
+     * 跨过的世界距离越大，但屏幕上看起来始终是"疏的"。同时越远越淡（见 noteGridOpacity），
+     * 提醒它已经只是底纹、不是真实比例。
+     */
+    const NOTE_GRID_MIN_PX = 14;
+
+    function noteGridSpacing(zoom) {
+      const base = 24 * (isFinite(zoom) && zoom > 0 ? zoom : 1);
+      let spacing = base;
+      let guard = 0;
+      while (spacing < NOTE_GRID_MIN_PX && guard < 8) { spacing *= 2; guard += 1 }
+      return Math.round(spacing * 100) / 100;
+    }
+
+    function noteGridOpacity(zoom) {
+      const base = 24 * (isFinite(zoom) && zoom > 0 ? zoom : 1);
+      if (base >= NOTE_GRID_MIN_PX) return 1;
+      return Math.round(clamp(0.35 + 0.65 * (base / NOTE_GRID_MIN_PX), 0.3, 1) * 100) / 100;
     }
 
     /**
@@ -4560,6 +4599,7 @@ window.__ModuleLoader__.load({
         layout: NOTE_LAYOUTS.indexOf(source.layout) >= 0 ? source.layout : 'mind',
         branch: NOTE_BRANCHES.indexOf(source.branch) >= 0 ? source.branch : 'curve',
         theme: NOTE_THEMES[source.theme] ? source.theme : 'classic',
+        bg: NOTE_BGS.indexOf(source.bg) >= 0 ? source.bg : 'dots',
       };
     }
 
@@ -10617,6 +10657,12 @@ window.__ModuleLoader__.load({
         onClick: () => patchStyle({ branch: id }),
       }, label);
 
+      const bgButton = (id, label) => h('button', {
+        key: id, type: 'button', className: 'wsb-segBtn', 'data-note-bg': id,
+        'data-on': style.bg === id ? 'true' : 'false', title: label,
+        onClick: () => patchStyle({ bg: id }),
+      }, label);
+
       const themeButton = (id) => {
         const entry = NOTE_THEMES[id];
         return h('button', {
@@ -10689,6 +10735,10 @@ window.__ModuleLoader__.load({
                 h('b', null, t.noteTheme),
                 h('div', { className: 'wsb-noteSwatches', 'data-note-themes': '1' },
                   Object.keys(NOTE_THEMES).map(themeButton))),
+              h('div', { className: 'wsb-noteGroup' },
+                h('b', null, t.noteBg),
+                h('div', { className: 'wsb-seg', 'data-note-bgs': '1' },
+                  NOTE_BGS.map((id) => bgButton(id, t['noteBg' + id.charAt(0).toUpperCase() + id.slice(1)])))),
               h('div', { className: 'wsb-noteGroup wsb-noteFileGroup' },
                 // 一个「文件」按钮承载全部文件动作：新建 / 保存 / 打开 / 导出。
                 // 之前这四个是并排的四个按钮，外加一个独立的导出下拉 —— 顶栏被撑得很长，而
@@ -10799,14 +10849,20 @@ window.__ModuleLoader__.load({
                 onDragOver: (event) => { event.preventDefault() },
                 onDrop: (event) => onDrop(event, ''),
               },
-                // 更黑的底 + 点阵网格（网格跟着缩放/平移走）。
-                h('div', {
-                  className: 'wsb-noteScrim', 'data-note-scrim': '1',
-                  style: {
-                    backgroundSize: (24 * pan.zoom) + 'px ' + (24 * pan.zoom) + 'px',
-                    backgroundPosition: pan.x + 'px ' + pan.y + 'px',
-                  },
-                }),
+                // 更黑的底 + 一层可切换的底纹（点阵 / 网格 / 斜纹 / 无）。
+                // 底纹跟着缩放与平移走；缩得很小时按 2 的幂放大格子并淡出，免得糊成噪点。
+                h('div', { className: 'wsb-noteScrim', 'data-note-scrim': '1' },
+                  h('i', {
+                    className: 'wsb-noteGrid', 'data-note-grid': '1', 'data-bg': style.bg,
+                    style: {
+                      backgroundSize: style.bg === 'diagonal'
+                        ? 'auto'
+                        : noteGridSpacing(pan.zoom) + 'px ' + noteGridSpacing(pan.zoom) + 'px',
+                      backgroundPosition: pan.x + 'px ' + pan.y + 'px',
+                      opacity: noteGridOpacity(pan.zoom),
+                      '--wsb-note-gap': noteGridSpacing(pan.zoom) + 'px',
+                    },
+                  })),
                 // 空画布：还没有中心节点，说明下一步怎么开始。
                 blank
                   ? h('div', { className: 'wsb-noteEmptyState', 'data-note-blank': '1' },
